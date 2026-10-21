@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,7 +33,7 @@ func stubTarget(t *testing.T, requests *atomic.Int64) *httptest.Server {
 	return server
 }
 
-func runAgainst(t *testing.T, scenario string) ([][]string, int64) {
+func runAgainst(t *testing.T, scenario string, tweak ...func(*config)) ([][]string, int64) {
 	t.Helper()
 	var requests atomic.Int64
 	target := stubTarget(t, &requests)
@@ -42,10 +43,14 @@ func runAgainst(t *testing.T, scenario string) ([][]string, int64) {
 		thinkTime: 20 * time.Millisecond, timeout: time.Second, bits: 64, scenario: scenario,
 		mockURL: target.URL, runID: "test", resultsDir: dir,
 	}
+	for _, apply := range tweak {
+		apply(&cfg)
+	}
 	if err := run(cfg); err != nil {
 		t.Fatal(err)
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "test_*_stub.csv"))
+	t.Logf("csv files: %v", files)
 	if len(files) != 1 {
 		t.Fatalf("want one CSV, got %v", files)
 	}
@@ -85,5 +90,22 @@ func TestUnknownScenarioIsRejected(t *testing.T) {
 func TestUnreachableTargetFails(t *testing.T) {
 	if _, err := fetchStats(http.DefaultClient, "http://127.0.0.1:1"); err == nil {
 		t.Error("want an error")
+	}
+}
+
+func TestModePrefixAndCSVOnStdout(t *testing.T) {
+	stdout := os.Stdout
+	read, write, _ := os.Pipe()
+	os.Stdout = write
+	rows, _ := runAgainst(t, "gateway", func(c *config) { c.modePrefix = "k8s-"; c.csvStdout = true })
+	write.Close()
+	os.Stdout = stdout
+	printed, _ := io.ReadAll(read)
+
+	if summary := rows[len(rows)-1]; summary[3] != "k8s-gateway" {
+		t.Errorf("mode = %q, want k8s-gateway", summary[3])
+	}
+	if !strings.Contains(string(printed), csvBegin+"\nkind,lang") || !strings.Contains(string(printed), csvEnd) {
+		t.Errorf("stdout does not carry the CSV: %q", printed)
 	}
 }

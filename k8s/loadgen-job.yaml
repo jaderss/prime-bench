@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loadgen
+  namespace: prime-bench
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532}
+      containers:
+        - name: loadgen
+          image: prime-bench/loadgen:go${GO_VERSION}
+          imagePullPolicy: Never
+          env:
+            - {name: TARGET, value: "http://${LANG_NAME}:8080"}
+            - {name: SCENARIO, value: "${SCENARIO}"}
+            - {name: USERS, value: "${USERS}"}
+            - {name: THINK_TIME, value: "${THINK_TIME}"}
+            - {name: DURATION, value: "${DURATION}"}
+            - {name: RAMP_UP, value: "${RAMP_UP}"}
+            - {name: BITS, value: "${SERVER_BITS}"}
+            - {name: RUN_ID, value: "${RUN_ID}"}
+            - {name: MOCK_URL, value: "http://mock:8080"}
+            - {name: MODE_PREFIX, value: "k8s-"}
+            - {name: CSV_STDOUT, value: "true"}
+            - {name: RESULTS_DIR, value: /tmp}
+          resources:
+            requests: {cpu: "${LOADGEN_CPUS}", memory: 256Mi, ephemeral-storage: 64Mi}
+            limits: {cpu: "${LOADGEN_CPUS}", memory: 512Mi, ephemeral-storage: 256Mi}
+          securityContext: {allowPrivilegeEscalation: false}

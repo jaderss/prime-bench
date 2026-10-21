@@ -70,6 +70,12 @@ Spring Boot runs the same gateway as an enterprise service would be written: Spr
 
 The load generator picks a random account per request (`acc-0` to `acc-9999`), with `GATEWAY_USERS` users and `GATEWAY_THINK_TIME` think time. In the CSV these rows have `mode=gateway` and `bits=0`.
 
+## On Kubernetes
+
+The Kubernetes run reuses the same images, settings and load generator. What changes is the path a request takes: the load generator Job calls the app through a Kubernetes Service, and the app calls the mock through another Service, so every hop goes through kube-proxy. Requests and limits are equal (Guaranteed QoS), so the CPU and memory caps match the compose run.
+
+Docker Desktop runs the cluster as one node inside the same VM as compose. This is about deployment realism (probes, Services, resource limits), not about more accurate numbers: compare the Kubernetes tab with the compose tab to see the cost of the extra network hops.
+
 ## What is measured
 
 One CSV per language and mode, in `results/`, with a row per second (`kind=interval`) and a final `kind=summary` row.

@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring
+spec:
+  replicas: 0
+  selector:
+    matchLabels: {app: spring}
+  template:
+    metadata:
+      labels: {app: spring}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532}
+      containers:
+        - name: spring
+          image: prime-bench/spring:java${SPRING_JAVA_VERSION}
+          imagePullPolicy: Never
+          env:
+            - {name: MODE, value: server}
+            - {name: BITS, value: "${SERVER_BITS}"}
+            - {name: ROUNDS, value: "${ROUNDS}"}
+            - {name: DOWNSTREAM_URL, value: "http://mock:8080"}
+            - {name: RESULTS_DIR, value: /tmp}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: 8080}
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: 8080}
+            initialDelaySeconds: 10
+          resources:
+            requests: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_K8S}", ephemeral-storage: 64Mi}
+            limits: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_K8S}", ephemeral-storage: 256Mi}
+          securityContext: {allowPrivilegeEscalation: false}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spring
+spec:
+  selector: {app: spring}
+  ports: [{port: 8080}]

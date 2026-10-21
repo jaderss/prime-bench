@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mock}
+  template:
+    metadata:
+      labels: {app: mock}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532}
+      containers:
+        - name: mock
+          image: prime-bench/mock:go${GO_VERSION}
+          imagePullPolicy: Never
+          env:
+            - {name: MOCK_LATENCY, value: "${MOCK_LATENCY}"}
+            - {name: MOCK_JITTER, value: "${MOCK_JITTER}"}
+            - {name: MOCK_TRANSACTIONS, value: "${MOCK_TRANSACTIONS}"}
+            - {name: MOCK_ERROR_RATE, value: "${MOCK_ERROR_RATE}"}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /stats, port: 8080}
+          resources:
+            requests: {cpu: "${MOCK_CPUS}", memory: 128Mi, ephemeral-storage: 64Mi}
+            limits: {cpu: "${MOCK_CPUS}", memory: 256Mi, ephemeral-storage: 256Mi}
+          securityContext: {allowPrivilegeEscalation: false}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock
+spec:
+  selector: {app: mock}
+  ports: [{port: 8080}]

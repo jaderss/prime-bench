@@ -72,7 +72,7 @@ services:
       dockerfile: loadgen/Dockerfile
       args:
         GO_VERSION: ${GO_VERSION:-1.27}
-    image: prime-bench/loadgen
+    image: prime-bench/loadgen:go${GO_VERSION:-1.27}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     cpus: ${LOADGEN_CPUS:-2}
     volumes:
@@ -93,7 +93,7 @@ services:
       dockerfile: mock/Dockerfile
       args:
         GO_VERSION: ${GO_VERSION:-1.27}
-    image: prime-bench/mock
+    image: prime-bench/mock:go${GO_VERSION:-1.27}
     cpus: ${MOCK_CPUS:-1}
     environment:
       MOCK_LATENCY: ${MOCK_LATENCY:-30ms}

@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -18,7 +19,11 @@ import (
 	"github.com/jaderss/prime-bench/apps/go/metrics"
 )
 
-const accounts = 10000
+const (
+	accounts = 10000
+	csvBegin = "----- BEGIN CSV -----"
+	csvEnd   = "----- END CSV -----"
+)
 
 type config struct {
 	target     string
@@ -30,6 +35,8 @@ type config struct {
 	bits       int
 	scenario   string
 	mockURL    string
+	modePrefix string
+	csvStdout  bool
 	runID      string
 	resultsDir string
 }
@@ -53,6 +60,8 @@ func loadConfig() config {
 		bits:       envInt("BITS", 1024),
 		scenario:   cmp.Or(os.Getenv("SCENARIO"), "prime"),
 		mockURL:    os.Getenv("MOCK_URL"),
+		modePrefix: os.Getenv("MODE_PREFIX"),
+		csvStdout:  os.Getenv("CSV_STDOUT") == "true",
 		runID:      cmp.Or(os.Getenv("RUN_ID"), "local"),
 		resultsDir: cmp.Or(os.Getenv("RESULTS_DIR"), "results"),
 	}
@@ -95,7 +104,7 @@ func run(cfg config) error {
 	mockBefore, _ := fetchStats(client, cfg.mockURL)
 	rec := &metrics.Recorder{}
 	info := metrics.RunInfo{
-		Lang: target.Lang, LangVersion: target.Version, Mode: mode, RunID: cfg.runID,
+		Lang: target.Lang, LangVersion: target.Version, Mode: cfg.modePrefix + mode, RunID: cfg.runID,
 		CPUs: target.CPUs, Bits: bits, Concurrency: cfg.users,
 	}
 	sampler, err := metrics.StartSampler(cfg.resultsDir, info, rec, remoteStats(client, cfg.target))
@@ -113,6 +122,9 @@ func run(cfg config) error {
 	}
 	users.Wait()
 	summary, err := sampler.Stop()
+	if err == nil && cfg.csvStdout {
+		err = printCSV(cfg, info)
+	}
 	log.Printf("%s %s %s users=%d %v", target.Lang, target.Version, mode, cfg.users, summary)
 	if mockAfter, mockErr := fetchStats(client, cfg.mockURL); cfg.mockURL != "" && mockErr == nil {
 		cpu := (mockAfter.CPUSeconds - mockBefore.CPUSeconds) / time.Since(start).Seconds() * 100
@@ -227,4 +239,13 @@ func remoteStats(client *http.Client, target string) metrics.StatsSource {
 		}
 		return last
 	}
+}
+
+func printCSV(cfg config, info metrics.RunInfo) error {
+	body, err := os.ReadFile(filepath.Join(cfg.resultsDir, fmt.Sprintf("%s_%s_%s.csv", info.RunID, info.Mode, info.Lang)))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\n%s%s\n", csvBegin, body, csvEnd)
+	return nil
 }
