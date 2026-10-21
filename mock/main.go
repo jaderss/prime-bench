@@ -56,10 +56,10 @@ func newHandler(cfg config) http.Handler {
 	rates := ratesJSON()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /accounts/{id}", downstream(cfg, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"id":%q,"owner":"Ada Example","currency":"USD","balanceMinor":1250075,"status":"active","openedAt":"2019-03-14T10:00:00Z"}`, r.PathValue("id"))
+		fmt.Fprintf(w, `{"id":%s,"owner":"Ada Example","currency":"USD","balanceMinor":1250075,"status":"active","openedAt":"2019-03-14T10:00:00Z"}`, jsonString(r.PathValue("id")))
 	}))
 	mux.HandleFunc("GET /accounts/{id}/transactions", downstream(cfg, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"accountId":%q,"transactions":`, r.PathValue("id"))
+		fmt.Fprintf(w, `{"accountId":%s,"transactions":`, jsonString(r.PathValue("id")))
 		w.Write(transactions)
 		w.Write([]byte("}"))
 	}))
@@ -72,6 +72,11 @@ func newHandler(cfg config) http.Handler {
 		fmt.Fprintf(w, `{"rss_mb":%.3f,"cpu_seconds":%.3f}`, stats.RssMB, stats.CPUSeconds)
 	})
 	return mux
+}
+
+func jsonString(value string) []byte {
+	encoded, _ := json.Marshal(value)
+	return encoded
 }
 
 func downstream(cfg config, write http.HandlerFunc) http.HandlerFunc {

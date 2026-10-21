@@ -100,3 +100,13 @@ func TestEnvParsingFallsBackOnInvalidValues(t *testing.T) {
 		t.Errorf("float = %v", got)
 	}
 }
+
+func TestAccountIDIsEscapedAsJSON(t *testing.T) {
+	server := httptest.NewServer(newHandler(config{transactions: 1}))
+	defer server.Close()
+
+	status, account := get(t, server.URL+"/accounts/acc%22%5C%01")
+	if status != 200 || account["id"] != "acc\"\\\x01" {
+		t.Errorf("got %d %q", status, account["id"])
+	}
+}
