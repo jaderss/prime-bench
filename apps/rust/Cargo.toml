@@ -1,0 +1,17 @@
+[package]
+name = "prime-bench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.9"
+num-bigint = "0.5.1"
+num-traits = "0.2.19"
+rand = "0.10.3"
+rayon = "1.12.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.0", features = ["rt-multi-thread", "net", "sync"] }
+
+[profile.release]
+codegen-units = 1
