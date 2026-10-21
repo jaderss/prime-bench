@@ -1,6 +1,6 @@
 # prime-bench
 
-[![CI](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml)
+[![CI](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml) [![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=jaderss_prime-bench&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jaderss_prime-bench) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jaderss_prime-bench&metric=coverage)](https://sonarcloud.io/summary/new_code?id=jaderss_prime-bench)
 
 Java, Go and Rust generating big probable primes with the same Miller-Rabin test. Two runs per language: a batch job on all CPUs, and an HTTP server under thousands of virtual users. Every run writes a CSV with throughput, latency percentiles, memory and CPU, and a React dashboard reads them.
 
