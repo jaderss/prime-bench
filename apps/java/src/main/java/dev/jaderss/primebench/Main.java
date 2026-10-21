@@ -1,0 +1,19 @@
+package dev.jaderss.primebench;
+
+import java.io.IOException;
+
+public final class Main {
+
+    private Main() {}
+
+    public static void main(String[] args) throws IOException {
+        Config config = Config.fromEnv();
+        switch (config.mode()) {
+            case "server" -> PrimeServer.run(config);
+            case "batch" -> BatchRunner.run(config);
+            default ->
+                throw new IllegalArgumentException(
+                        "unknown MODE %s, expected server or batch".formatted(config.mode()));
+        }
+    }
+}
