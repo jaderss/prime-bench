@@ -3,6 +3,12 @@ import { Legend, SummaryBars, TimeSeries } from './charts'
 import { loadRuns, timeSeries, type Mode, type Result, type Run } from './data'
 import { formatNumber, formatRunId } from './format'
 
+const describeServer = (r: Result) =>
+  `${formatNumber(r.summary.concurrency)} virtual users requesting ${r.summary.bits}-bit primes over HTTP, ${r.summary.cpus} CPUs`
+
+const describeGateway = (r: Result) =>
+  `${formatNumber(r.summary.concurrency)} virtual users, each request fans out to 3 downstream HTTP calls and parses their JSON, ${r.summary.cpus} CPUs`
+
 const MODES: { mode: Mode; title: string; describe: (r: Result) => string }[] = [
   {
     mode: 'batch',
@@ -12,14 +18,15 @@ const MODES: { mode: Mode; title: string; describe: (r: Result) => string }[] = 
   {
     mode: 'server',
     title: 'Server under load',
-    describe: (r) => `${formatNumber(r.summary.concurrency)} virtual users requesting ${r.summary.bits}-bit primes over HTTP, ${r.summary.cpus} CPUs`,
+    describe: describeServer,
   },
   {
     mode: 'gateway',
     title: 'Gateway calling downstream APIs',
-    describe: (r) =>
-      `${formatNumber(r.summary.concurrency)} virtual users, each request fans out to 3 downstream HTTP calls and parses their JSON, ${r.summary.cpus} CPUs`,
+    describe: describeGateway,
   },
+  { mode: 'k8s-server', title: 'Server on Kubernetes', describe: describeServer },
+  { mode: 'k8s-gateway', title: 'Gateway on Kubernetes', describe: describeGateway },
 ]
 
 const COLUMNS: { label: string; value: (r: Result) => string }[] = [
@@ -90,44 +97,80 @@ function ModeSection({ title, describe, results }: { title: string; describe: (r
   )
 }
 
+const ENVIRONMENTS: { id: string; label: string; modes: Mode[]; empty: string }[] = [
+  { id: 'compose', label: 'Docker Compose', modes: ['batch', 'server', 'gateway'], empty: 'make bench' },
+  { id: 'kubernetes', label: 'Kubernetes', modes: ['k8s-server', 'k8s-gateway'], empty: 'make k8s-bench' },
+]
+
+const showEnvironment = (id: string) => {
+  window.location.hash = id
+}
+
+const environmentFromHash = () => ENVIRONMENTS.find((e) => `#${e.id}` === window.location.hash) ?? ENVIRONMENTS[0]
+
 export default function App() {
   const [runs, setRuns] = useState<Run[]>()
-  const [runId, setRunId] = useState<string>()
+  const [environment, setEnvironment] = useState(environmentFromHash)
+  const [selectedRunId, setSelectedRunId] = useState<string>()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
     loadRuns()
-      .then((loaded) => {
-        setRuns(loaded)
-        setRunId(loaded[0]?.id)
-      })
+      .then(setRuns)
       .catch((e: unknown) => setError(String(e)))
+    const onHashChange = () => setEnvironment(environmentFromHash())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
-  const run = runs?.find((r) => r.id === runId)
-  const history = runs?.flatMap((r) => r.results) ?? []
+  const environmentRuns = (runs ?? [])
+    .map((r) => ({ ...r, results: r.results.filter((result) => environment.modes.includes(result.mode)) }))
+    .filter((r) => r.results.length > 0)
+  const run = environmentRuns.find((r) => r.id === selectedRunId) ?? environmentRuns[0]
+  const history = environmentRuns.flatMap((r) => r.results)
+
+  const selectEnvironment = (id: string) => {
+    showEnvironment(id)
+    setSelectedRunId(undefined)
+  }
 
   return (
     <main>
       <header className="page-header">
         <div>
           <h1>Prime Bench</h1>
-          <p className="secondary">Java, Go and Rust generating big probable primes with the same Miller-Rabin test.</p>
+          <p className="secondary">Java, Go and Rust on CPU-bound prime generation and an I/O-bound gateway, with Spring Boot on the JVM and as a native image in the gateway.</p>
         </div>
-        {runs && runs.length > 0 && (
+        {environmentRuns.length > 0 && (
           <label className="run-picker">
             <span className="secondary">Run</span>
-            <select value={runId} onChange={(e) => setRunId(e.target.value)}>
-              {runs.map((r) => <option key={r.id} value={r.id}>{formatRunId(r.id)}</option>)}
+            <select value={run?.id} onChange={(e) => setSelectedRunId(e.target.value)}>
+              {environmentRuns.map((r) => <option key={r.id} value={r.id}>{formatRunId(r.id)}</option>)}
             </select>
           </label>
         )}
       </header>
 
-      {error && <p className="notice">Could not load results: {error}</p>}
-      {runs?.length === 0 && <p className="notice">No results yet. Run <code>make bench</code> and reload.</p>}
+      <nav className="tabs" role="tablist" aria-label="Where the benchmark ran">
+        {ENVIRONMENTS.map((e) => (
+          <button
+            key={e.id}
+            role="tab"
+            aria-selected={e.id === environment.id}
+            className="tab"
+            onClick={() => selectEnvironment(e.id)}
+          >
+            {e.label}
+          </button>
+        ))}
+      </nav>
 
-      {run && MODES.map(({ mode, title, describe }) => {
+      {error && <p className="notice">Could not load results: {error}</p>}
+      {runs && environmentRuns.length === 0 && (
+        <p className="notice">No {environment.label} results yet. Run <code>{environment.empty}</code> and reload.</p>
+      )}
+
+      {run && MODES.filter(({ mode }) => environment.modes.includes(mode)).map(({ mode, title, describe }) => {
         const results = run.results.filter((r) => r.mode === mode)
         return results.length > 0 && <ModeSection key={mode} title={title} describe={describe} results={results} />
       })}
@@ -137,7 +180,7 @@ export default function App() {
           <header className="section-header">
             <div>
               <h2>All runs</h2>
-              <p className="secondary">Every summary on disk. Compare language versions across runs here.</p>
+              <p className="secondary">Every {environment.label} summary on disk. Compare language versions across runs here.</p>
             </div>
           </header>
           <ResultsTable results={history} showRun />
