@@ -41,7 +41,7 @@ export function SummaryBars({ results, title, unit, value }: {
       <ResponsiveContainer width="100%" height={40 + data.length * 36}>
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 64, bottom: 4, left: 0 }} barCategoryGap={8}>
           <XAxis type="number" hide domain={[0, 'dataMax']} />
-          <YAxis type="category" dataKey="lang" width={44} tickLine={false} axisLine={{ stroke: theme.axis }} tick={{ fill: theme.muted, fontSize: 12 }} />
+          <YAxis type="category" dataKey="lang" width={96} tickLine={false} axisLine={{ stroke: theme.axis }} tick={{ fill: theme.muted, fontSize: 12 }} />
           <Tooltip cursor={false} content={<ChartTooltip unit={unit} title={() => title} />} />
           <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false} stroke={theme.surface} strokeWidth={2}>
             {data.map((entry) => <Cell key={entry.lang} fill={theme.series[entry.lang]} />)}
