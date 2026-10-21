@@ -33,6 +33,8 @@ GET /stats            {"lang":"go","version":"1.27.3","cpus":4,"rss_mb":21.7,"cp
 GET /health           ok
 ```
 
+Without `bits` the server uses its default (`BITS`, 512 in server runs). An empty, non-numeric or out of range `bits` (64 to 8192) is a 400. Any method other than GET is a 405. The three servers are tested against the same cases.
+
 | | Concurrency model |
 |---|---|
 | Java | `HttpServer` with a virtual thread per request |

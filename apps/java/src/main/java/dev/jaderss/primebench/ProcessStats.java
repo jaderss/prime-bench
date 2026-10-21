@@ -15,11 +15,8 @@ record ProcessStats(double rssMb, double cpuSeconds) {
     }
 
     private static double readRssMb() {
-        try (var lines = Files.lines(STATUS)) {
-            return lines.filter(line -> line.startsWith("VmRSS:"))
-                    .map(line -> Double.parseDouble(line.split("\\s+")[1]) / 1024)
-                    .findFirst()
-                    .orElse(0.0);
+        try {
+            return parseRssMb(Files.readString(STATUS));
         } catch (IOException e) {
             return 0;
         }
@@ -27,11 +24,22 @@ record ProcessStats(double rssMb, double cpuSeconds) {
 
     private static double readCpuSeconds() {
         try {
-            String stat = Files.readString(STAT);
-            String[] fields = stat.substring(stat.lastIndexOf(')') + 2).split(" ");
-            return (Double.parseDouble(fields[11]) + Double.parseDouble(fields[12])) / CLOCK_TICKS_PER_SECOND;
+            return parseCpuSeconds(Files.readString(STAT));
         } catch (IOException e) {
             return 0;
         }
+    }
+
+    static double parseRssMb(String status) {
+        return status.lines()
+                .filter(line -> line.startsWith("VmRSS:"))
+                .map(line -> Double.parseDouble(line.split("\\s+")[1]) / 1024)
+                .findFirst()
+                .orElse(0.0);
+    }
+
+    static double parseCpuSeconds(String stat) {
+        String[] fields = stat.substring(stat.lastIndexOf(')') + 2).split(" ");
+        return (Double.parseDouble(fields[11]) + Double.parseDouble(fields[12])) / CLOCK_TICKS_PER_SECOND;
     }
 }

@@ -1,12 +1,13 @@
 package dev.jaderss.primebench;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutionException;
 
 public final class Main {
 
     private Main() {}
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
         Config config = Config.fromEnv();
         switch (config.mode()) {
             case "server" -> PrimeServer.run(config);

@@ -92,5 +92,6 @@ mod tests {
         assert_eq!(parse_bits(Some("32"), 1024), None);
         assert_eq!(parse_bits(Some("9000"), 1024), None);
         assert_eq!(parse_bits(Some("abc"), 1024), None);
+        assert_eq!(parse_bits(Some(""), 1024), None);
     }
 }

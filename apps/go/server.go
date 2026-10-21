@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
 	"sync"
@@ -19,7 +20,7 @@ func serve(cfg config) error {
 	generators := sync.Pool{New: func() any { return newGenerator(cfg.rounds) }}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /prime", func(w http.ResponseWriter, r *http.Request) {
-		bits, err := parseBits(r.URL.Query().Get("bits"), cfg.bits)
+		bits, err := parseBits(r.URL.Query(), cfg.bits)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -41,14 +42,15 @@ func serve(cfg config) error {
 		w.Write([]byte("ok"))
 	})
 	log.Printf("go %s listening on :%s", langVersion(), cfg.port)
-	return http.ListenAndServe(":"+cfg.port, mux)
+	server := &http.Server{Addr: ":" + cfg.port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	return server.ListenAndServe()
 }
 
-func parseBits(raw string, fallback int) (int, error) {
-	if raw == "" {
+func parseBits(query url.Values, fallback int) (int, error) {
+	if !query.Has("bits") {
 		return fallback, nil
 	}
-	bits, err := strconv.Atoi(raw)
+	bits, err := strconv.Atoi(query.Get("bits"))
 	if err != nil || bits < minBits || bits > maxBits {
 		return 0, fmt.Errorf("bits must be an integer between %d and %d", minBits, maxBits)
 	}

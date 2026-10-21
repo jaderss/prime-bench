@@ -175,7 +175,13 @@ func waitForTarget(client *http.Client, target string) (targetStats, error) {
 }
 
 func fetchStats(client *http.Client, target string) (targetStats, error) {
-	resp, err := client.Get(target + "/stats")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target+"/stats", nil)
+	if err != nil {
+		return targetStats{}, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return targetStats{}, err
 	}

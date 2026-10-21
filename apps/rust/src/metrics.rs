@@ -33,14 +33,20 @@ impl ProcessStats {
 }
 
 fn read_rss_mb() -> Option<f64> {
-    let status = fs::read_to_string("/proc/self/status").ok()?;
+    parse_rss_mb(&fs::read_to_string("/proc/self/status").ok()?)
+}
+
+fn read_cpu_seconds() -> Option<f64> {
+    parse_cpu_seconds(&fs::read_to_string("/proc/self/stat").ok()?)
+}
+
+fn parse_rss_mb(status: &str) -> Option<f64> {
     let line = status.lines().find(|line| line.starts_with("VmRSS:"))?;
     let kb: f64 = line.split_whitespace().nth(1)?.parse().ok()?;
     Some(kb / 1024.0)
 }
 
-fn read_cpu_seconds() -> Option<f64> {
-    let stat = fs::read_to_string("/proc/self/stat").ok()?;
+fn parse_cpu_seconds(stat: &str) -> Option<f64> {
     let fields: Vec<&str> = stat[stat.rfind(')')? + 1..].split_whitespace().collect();
     let utime: f64 = fields.get(11)?.parse().ok()?;
     let stime: f64 = fields.get(12)?.parse().ok()?;
@@ -251,7 +257,21 @@ impl Sampler {
 
 #[cfg(test)]
 mod tests {
-    use super::percentile;
+    use super::{parse_cpu_seconds, parse_rss_mb, percentile};
+
+    const STAT: &str = "4242 (my (odd) proc) S 1 4242 4242 0 -1 4194560 2000 0 0 0 250 50 0 0 20 0 9 0 1000 123456 789 0\n";
+    const STATUS: &str = "Name:\tjava\nVmPeak:\t  999999 kB\nVmRSS:\t  204800 kB\nThreads:\t9\n";
+
+    #[test]
+    fn cpu_seconds_adds_user_and_system_ticks_after_the_last_parenthesis() {
+        assert_eq!(parse_cpu_seconds(STAT), Some(3.0));
+    }
+
+    #[test]
+    fn rss_reads_vm_rss_in_megabytes() {
+        assert_eq!(parse_rss_mb(STATUS), Some(200.0));
+        assert_eq!(parse_rss_mb("Name:\tkthreadd\n"), None);
+    }
 
     #[test]
     fn percentile_uses_nearest_rank() {

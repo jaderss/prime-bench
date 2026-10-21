@@ -1,10 +1,12 @@
 package dev.jaderss.primebench;
 
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.Executors;
@@ -21,11 +23,21 @@ final class PrimeServer {
         var generator = new PrimeGenerator(config.rounds());
         var server = HttpServer.create(new InetSocketAddress(config.port()), BACKLOG);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-        server.createContext("/prime", exchange -> prime(exchange, generator, config.bits()));
-        server.createContext("/stats", PrimeServer::stats);
-        server.createContext("/health", exchange -> respond(exchange, 200, "text/plain", "ok"));
+        server.createContext("/prime", get(exchange -> prime(exchange, generator, config.bits())));
+        server.createContext("/stats", get(PrimeServer::stats));
+        server.createContext("/health", get(exchange -> respond(exchange, 200, "text/plain", "ok")));
         server.start();
         System.out.printf("java %s listening on :%d%n", RunInfo.langVersion(), config.port());
+    }
+
+    private static HttpHandler get(HttpHandler handler) {
+        return exchange -> {
+            if ("GET".equals(exchange.getRequestMethod())) {
+                handler.handle(exchange);
+            } else {
+                respond(exchange, 405, "text/plain", "method not allowed");
+            }
+        };
     }
 
     private static void prime(HttpExchange exchange, PrimeGenerator generator, int defaultBits) throws IOException {
@@ -65,15 +77,27 @@ final class PrimeServer {
     }
 
     static Optional<Integer> parseBits(String query, int defaultBits) {
-        if (query == null || !query.startsWith("bits=")) {
+        Optional<String> raw = queryParam(query, "bits");
+        if (raw.isEmpty()) {
             return Optional.of(defaultBits);
         }
         try {
-            int bits = Integer.parseInt(query.substring("bits=".length()));
+            int bits = Integer.parseInt(raw.get());
             return bits >= MIN_BITS && bits <= MAX_BITS ? Optional.of(bits) : Optional.empty();
         } catch (NumberFormatException e) {
             return Optional.empty();
         }
+    }
+
+    private static Optional<String> queryParam(String query, String name) {
+        if (query == null) {
+            return Optional.empty();
+        }
+        return Arrays.stream(query.split("&"))
+                .map(pair -> pair.split("=", 2))
+                .filter(pair -> pair[0].equals(name))
+                .map(pair -> pair.length > 1 ? pair[1] : "")
+                .findFirst();
     }
 
     private static void respond(HttpExchange exchange, int status, String contentType, String body) throws IOException {
