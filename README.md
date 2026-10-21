@@ -8,20 +8,85 @@ The point is to compare the concurrency models on the same work: Java virtual th
 
 ## Running
 
-Needs Docker and `make`. Nothing else is installed on the host.
+You need git, `make` and Docker running (Docker Desktop on macOS and Windows). The defaults use 6 CPUs in Docker: 4 for the app under test and 2 for the load generator. With fewer, lower `APP_CPUS` and `LOADGEN_CPUS` (see below). No JDK, Go, Rust or Node is needed on the host.
 
 ```bash
+git clone https://github.com/jaderss/prime-bench.git
+cd prime-bench
 make bench        # build, then batch and server runs for java, go and rust
-make dashboard    # http://localhost:8080
+make dashboard    # open http://localhost:8080
+make down         # stop everything
 ```
 
-`make bench` takes about five minutes with the defaults. CSVs land in `results/`, one per language and mode, named after the run.
+`make bench` takes about five minutes with the defaults. The first build pulls the base images and takes a few minutes more. CSVs land in `results/`, one per language and mode, named after the run (`20261021T172045Z_server_go.csv`). `make help` lists every target.
+
+For a quick first look, about two minutes:
 
 ```bash
-make batch LANGS=rust                 # one mode, one language
-make server USERS=5000 THINK_TIME=1s  # heavier load
-make bench JAVA_VERSION=25 LANGS=java # same benchmark on another JDK
+make bench BATCH_COUNT=40 USERS=200 DURATION=15s
 ```
+
+Any value from `.env` can be overridden on the command line:
+
+```bash
+make batch LANGS=rust                    # one mode, one language
+make server USERS=5000 THINK_TIME=1s     # heavier load
+make bench JAVA_VERSION=25 LANGS=java    # same benchmark on another JDK
+make bench APP_CPUS=2 LOADGEN_CPUS=1     # smaller Docker setup
+make dashboard DASHBOARD_PORT=9090       # 8080 already taken
+```
+
+### Calling a server by hand
+
+```bash
+docker compose up -d --build go
+curl "localhost:8082/prime?bits=512"
+curl localhost:8082/stats
+docker compose down
+```
+
+| Service | Port |
+|---|---|
+| java | 8081 |
+| go | 8082 |
+| rust | 8083 |
+| dashboard | 8080 |
+
+### Without make
+
+The make targets are thin wrappers around compose. Set `RUN_ID` yourself, otherwise every run writes to `local_*.csv`. On Linux, also export your user id so the containers can write to `results/`.
+
+```bash
+export HOST_UID=$(id -u) HOST_GID=$(id -g)   # Linux only
+docker compose build java go rust
+docker compose --profile tools build loadgen
+docker compose run --rm -e MODE=batch -e BITS=2048 -e RUN_ID=run1 go
+docker compose up -d go
+docker compose run --rm -e TARGET=http://go:8080 -e RUN_ID=run1 loadgen
+docker compose down
+```
+
+### Without Docker
+
+Each app also runs on its own toolchain (JDK 25+, Go 1.25+, Rust 1.85+, Node 22.12+). Memory and CPU are read from Linux `/proc`, so those two columns are 0 on macOS and Windows.
+
+```bash
+cd apps/go   && MODE=batch RESULTS_DIR=../../results go run .
+cd apps/rust && MODE=batch RESULTS_DIR=../../results cargo run --release
+cd apps/java && ./mvnw package && MODE=batch RESULTS_DIR=../../results java -jar target/prime-bench.jar
+cd loadgen   && TARGET=http://localhost:8080 USERS=200 RESULTS_DIR=../results go run .
+```
+
+Without `MODE=batch` an app starts its server on port 8080 (`PORT` to change).
+
+### Troubleshooting
+
+| Error | Fix |
+|---|---|
+| `range of CPUs is from 0.01 to N` | Docker has fewer CPUs than `APP_CPUS` or `LOADGEN_CPUS`. Lower them, or raise the CPUs in Docker Desktop settings. |
+| `Cannot connect to the Docker daemon` | Start Docker Desktop. |
+| `port is already allocated` | Another process uses 8080 to 8083. Stop it, or use `DASHBOARD_PORT` for the dashboard. |
+| Dashboard says "No results yet" | Run `make bench` first, then reload. |
 
 ## Upgrading a language
 
@@ -86,7 +151,11 @@ Each app reads its settings from the environment: `MODE` (`batch` or `server`), 
 
 Each Dockerfile runs the language's tests before it builds the image, so `make build` fails on a broken test. The same prime and composite vectors (Mersenne primes, Carmichael numbers, a strong pseudoprime to bases 2, 3, 5 and 7) are checked in all three languages.
 
+With the toolchains installed:
+
 ```bash
 cd apps/java && ./mvnw verify           # also checks formatting
-cd dashboard && npm ci && npm run dev   # dashboard with hot reload, reads ../results
+cd apps/go   && go test ./...
+cd apps/rust && cargo test
+cd dashboard && npm ci && npm run dev   # dashboard with hot reload on :5173, reads ../results
 ```

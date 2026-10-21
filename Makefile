@@ -16,7 +16,7 @@ help:
 	@echo "make bench       build, then run batch and server benchmarks for LANGS ($(LANGS))"
 	@echo "make batch       generate BATCH_COUNT primes of BATCH_BITS in each language"
 	@echo "make server      run USERS virtual users against each language's HTTP server"
-	@echo "make dashboard   serve the dashboard on http://localhost:8080"
+	@echo "make dashboard   serve the dashboard on http://localhost:8080 (DASHBOARD_PORT to change)"
 	@echo "make down        stop everything"
 	@echo "make clean       delete CSV results"
 	@echo "Override anything from .env, for example: make bench JAVA_VERSION=25 LANGS=java"
@@ -41,7 +41,7 @@ server: | results
 
 dashboard:
 	$(COMPOSE) up -d --build dashboard
-	@echo "Dashboard on http://localhost:8080"
+	@echo "Dashboard on http://localhost:$${DASHBOARD_PORT:-8080}"
 
 down:
 	$(COMPOSE) --profile tools down --remove-orphans

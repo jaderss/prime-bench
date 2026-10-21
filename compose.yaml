@@ -72,6 +72,6 @@ services:
         NODE_VERSION: ${NODE_VERSION:-26}
         NGINX_VERSION: ${NGINX_VERSION:-1.31}
     image: prime-bench/dashboard
-    ports: ["8080:80"]
+    ports: ["${DASHBOARD_PORT:-8080}:80"]
     volumes:
       - ./results:/usr/share/nginx/html/results:ro
