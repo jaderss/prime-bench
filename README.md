@@ -33,6 +33,7 @@ make batch LANGS=rust                    # one mode, one language
 make server USERS=5000 THINK_TIME=1s     # heavier load
 make gateway MOCK_LATENCY=80ms           # slower downstream APIs
 make gateway MOCK_ERROR_RATE=0.01        # 1% of downstream calls fail
+make gateway GATEWAY_LANGS="spring spring-native"   # only the Spring variants
 make bench JAVA_VERSION=25 LANGS=java    # same benchmark on another JDK
 make bench APP_CPUS=2 LOADGEN_CPUS=1     # smaller Docker setup
 make dashboard DASHBOARD_PORT=9090       # 8080 already taken
@@ -52,6 +53,8 @@ docker compose down
 | java | 8081 |
 | go | 8082 |
 | rust | 8083 |
+| spring | 8084 |
+| spring-native | 8085 |
 | dashboard | 8080 |
 
 ```bash
@@ -135,9 +138,11 @@ One run on an Apple M4 Max, Docker Desktop, 4 CPUs and 2 GB per app. Java 27, Go
 
 | | Requests/s | p50 ms | p99 ms | Peak RSS MB | CPU % |
 |---|---|---|---|---|---|
-| Java | 1753 | 36.8 | 41.2 | 473 | 82 |
-| Go | 1755 | 36.7 | 41.1 | 31.5 | 35 |
-| Rust | 1753 | 36.7 | 41.1 | 19.8 | 22 |
+| Java (no framework) | 1753 | 36.7 | 41.2 | 463 | 88 |
+| Spring Boot, JVM | 1754 | 36.8 | 41.4 | 490 | 124 |
+| Spring Boot, native | 1753 | 37.6 | 61.3 | 466 | 137 |
+| Go | 1756 | 36.6 | 41.0 | 30.0 | 40 |
+| Rust | 1753 | 36.6 | 41.0 | 20.0 | 24 |
 
 The mock downstream used 15% of its CPU in each gateway run, so it was not the limit.
 
@@ -148,6 +153,8 @@ What the numbers show:
 - Under load that extra CPU turns into latency. Go serves the same traffic at 87% CPU, Java at 59%, and queueing near saturation grows much faster than load. Same throughput, 40x the p99.
 - Go's garbage collector is not the main cost. The heap stays around 5 MB, so it runs about 200 cycles per second, but those take 3% of the CPU. `GOGC=400` cuts the p99 to about 120 ms with the same CPU use. Try it with `make server LANGS=go GOGC=400`.
 - In the gateway, where the work is waiting on other services, all three give the same throughput and latency. The cost is what differs: for the same 1750 requests per second, Java uses 3.7 times the CPU of Rust and Go 1.6 times.
+- Spring Boot on the JVM costs about 40% more CPU than plain Java for the same gateway (124% against 88%), with the same latency and memory. That is the framework: servlet filters, message converters, validation and observability hooks.
+- The GraalVM native build starts in 0.05 s and is lean at low load (140 MB and 18% CPU at 100 users, against 335 MB and 43% on the JVM). Under sustained load it gives that back: more CPU than the JVM, as much memory and a worse p99. GraalVM Community has no JIT to re-optimize hot code and only the serial collector, so native is for fast startup and small idle footprints, not for peak throughput.
 - Memory is where the runtimes differ most. In the gateway run: 473 MB for the JVM, 31.5 MB for Go, 19.8 MB for Rust. With `JAVA_OPTS=-Xmx128m` Java handles the same load at 337 MB, so most of the JVM's memory is the runtime itself, not the heap.
 
 Run it on your own machine before you quote any of this. See [METHODOLOGY.md](METHODOLOGY.md) for the limits.
@@ -158,6 +165,7 @@ Run it on your own machine before you quote any of this. See [METHODOLOGY.md](ME
 apps/java     Java 27, no framework. HttpServer and HttpClient on virtual threads, Jackson, Maven, JUnit
 apps/go       Go 1.27, standard library only
 apps/rust     Rust 1.99, axum, tokio, rayon, num-bigint, reqwest, serde
+apps/spring   Spring Boot 4.1 on Java 25: the gateway only, as a JVM image and a GraalVM native image
 loadgen       Go load generator, shares the CSV writer with apps/go
 mock          Go mock of three downstream REST APIs, with latency and error injection
 dashboard     React 19, Vite, Recharts, served by nginx

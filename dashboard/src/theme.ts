@@ -25,7 +25,13 @@ function snapshot(): Theme {
     cached = {
       dark: darkQuery.matches,
       theme: {
-        series: { java: read('--series-java'), go: read('--series-go'), rust: read('--series-rust') },
+        series: {
+          java: read('--series-java'),
+          'spring-native': read('--series-spring-native'),
+          spring: read('--series-spring'),
+          go: read('--series-go'),
+          rust: read('--series-rust'),
+        },
         grid: read('--grid'),
         axis: read('--axis'),
         muted: read('--text-muted'),

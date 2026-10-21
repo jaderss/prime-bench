@@ -45,6 +45,26 @@ services:
     image: prime-bench/rust:${RUST_VERSION:-1.99}
     ports: ["8083:8080"]
 
+  spring:
+    <<: *app
+    build:
+      context: apps/spring
+      target: jvm
+      args:
+        SPRING_JAVA_VERSION: ${SPRING_JAVA_VERSION:-25}
+    image: prime-bench/spring:java${SPRING_JAVA_VERSION:-25}
+    ports: ["8084:8080"]
+
+  spring-native:
+    <<: *app
+    build:
+      context: apps/spring
+      target: native
+      args:
+        SPRING_JAVA_VERSION: ${SPRING_JAVA_VERSION:-25}
+    image: prime-bench/spring-native:java${SPRING_JAVA_VERSION:-25}
+    ports: ["8085:8080"]
+
   loadgen:
     profiles: [tools]
     build:

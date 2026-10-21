@@ -11,6 +11,8 @@
   --series-java: #2a78d6;
   --series-rust: #eb6834;
   --series-go: #1baf7a;
+  --series-spring: #eda100;
+  --series-spring-native: #e87ba4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,6 +29,8 @@
     --series-java: #3987e5;
     --series-rust: #d95926;
     --series-go: #199e70;
+    --series-spring: #c98500;
+    --series-spring-native: #d55181;
   }
 }
 
@@ -43,6 +47,8 @@
   --series-java: #3987e5;
   --series-rust: #d95926;
   --series-go: #199e70;
+  --series-spring: #c98500;
+  --series-spring-native: #d55181;
 }
 
 * {

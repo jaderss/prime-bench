@@ -66,6 +66,8 @@ The downstream is one shared mock (`mock/`, Go), so all three call the same thin
 
 For fairness, all three use HTTP/1.1 with keep-alive and a pool that does not cap connections: Go's default of 2 idle connections per host is raised to 4096, reqwest gets the same, and Java's client has no limit by default. Every request waits for the slowest of its three calls, so the gateway p50 starts around the mock's latency and the tail follows its jitter.
 
+Spring Boot runs the same gateway as an enterprise service would be written: Spring Boot 4.1 on Java 25, MVC on virtual threads, `RestClient` on the JDK HTTP client (HTTP/1.1), the three calls on Spring's virtual-thread task executor with `CompletableFuture`, Bean Validation on the account and Actuator for health probes. The same code ships twice: on the JVM (Temurin 25) and as a GraalVM Community 25 native image on distroless. Both run on Java 25, the newest JDK GraalVM Community ships, so the only difference between them is JIT against ahead-of-time compilation. Spring only runs the gateway scenario (`GATEWAY_LANGS`).
+
 The load generator picks a random account per request (`acc-0` to `acc-9999`), with `GATEWAY_USERS` users and `GATEWAY_THINK_TIME` think time. In the CSV these rows have `mode=gateway` and `bits=0`.
 
 ## What is measured

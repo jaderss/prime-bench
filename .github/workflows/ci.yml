@@ -34,9 +34,6 @@ jobs:
 
   java-format:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/java
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -45,7 +42,10 @@ jobs:
           java-version: '25'
           cache: maven
       - name: Build, test and check formatting
-        run: ./mvnw -B verify
+        run: |
+          for module in apps/java apps/spring; do
+            (cd "$module" && ./mvnw -B verify)
+          done
 
   server-smoke:
     runs-on: ubuntu-latest
@@ -90,8 +90,10 @@ jobs:
         with:
           go-version: '1.27'
       - name: Java tests with coverage
-        working-directory: apps/java
-        run: ./mvnw -B org.jacoco:jacoco-maven-plugin:0.8.15:prepare-agent verify org.jacoco:jacoco-maven-plugin:0.8.15:report
+        run: |
+          for module in apps/java apps/spring; do
+            (cd "$module" && ./mvnw -B org.jacoco:jacoco-maven-plugin:0.8.15:prepare-agent verify org.jacoco:jacoco-maven-plugin:0.8.15:report)
+          done
       - name: Go tests with coverage
         run: |
           for module in apps/go mock loadgen; do
