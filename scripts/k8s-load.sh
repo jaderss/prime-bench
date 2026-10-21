@@ -3,7 +3,7 @@ set -euo pipefail
 
 k() { kubectl --context docker-desktop "$@"; }
 
-if [ "$(k get nodes -o jsonpath='{.items[0].metadata.name}')" = "docker-desktop" ]; then
+if [[ "$(k get nodes -o jsonpath='{.items[0].metadata.name}')" == "docker-desktop" ]]; then
   echo "kubeadm node shares the Docker image store, nothing to load"
   exit 0
 fi
