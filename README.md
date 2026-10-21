@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml) [![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=jaderss_prime-bench&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jaderss_prime-bench) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jaderss_prime-bench&metric=coverage)](https://sonarcloud.io/summary/new_code?id=jaderss_prime-bench)
 
-Java, Go and Rust generating big probable primes with the same Miller-Rabin test. Two runs per language: a batch job on all CPUs, and an HTTP server under thousands of virtual users. Every run writes a CSV with throughput, latency percentiles, memory and CPU, and a React dashboard reads them.
+Java, Go and Rust on the same work, in three scenarios: a batch job generating big probable primes on all CPUs, an HTTP server generating them for thousands of virtual users, and a gateway endpoint that calls three downstream REST APIs in parallel and parses their JSON. Every run writes a CSV with throughput, latency percentiles, memory and CPU, and a React dashboard reads them.
 
-The point is to compare the concurrency models on the same work: Java virtual threads, Go goroutines, and Rust tokio with a rayon pool.
+The point is to compare the concurrency models on CPU-bound and on I/O-bound work: Java virtual threads, Go goroutines, and Rust tokio (with a rayon pool for the CPU work).
 
 ## Running
 
@@ -13,17 +13,17 @@ You need git, `make` and Docker running (Docker Desktop on macOS and Windows). T
 ```bash
 git clone https://github.com/jaderss/prime-bench.git
 cd prime-bench
-make bench        # build, then batch and server runs for java, go and rust
+make bench        # build, then batch, server and gateway runs for java, go and rust
 make dashboard    # open http://localhost:8080
 make down         # stop everything
 ```
 
-`make bench` takes about five minutes with the defaults. The first build pulls the base images and takes a few minutes more. CSVs land in `results/`, one per language and mode, named after the run (`20261021T172045Z_server_go.csv`). `make help` lists every target.
+`make bench` takes about eight minutes with the defaults. The first build pulls the base images and takes a few minutes more. CSVs land in `results/`, one per language and mode, named after the run (`20261021T172045Z_server_go.csv`). `make help` lists every target.
 
 For a quick first look, about two minutes:
 
 ```bash
-make bench BATCH_COUNT=40 USERS=200 DURATION=15s
+make bench BATCH_COUNT=40 USERS=200 GATEWAY_USERS=200 DURATION=15s
 ```
 
 Any value from `.env` can be overridden on the command line:
@@ -31,6 +31,8 @@ Any value from `.env` can be overridden on the command line:
 ```bash
 make batch LANGS=rust                    # one mode, one language
 make server USERS=5000 THINK_TIME=1s     # heavier load
+make gateway MOCK_LATENCY=80ms           # slower downstream APIs
+make gateway MOCK_ERROR_RATE=0.01        # 1% of downstream calls fail
 make bench JAVA_VERSION=25 LANGS=java    # same benchmark on another JDK
 make bench APP_CPUS=2 LOADGEN_CPUS=1     # smaller Docker setup
 make dashboard DASHBOARD_PORT=9090       # 8080 already taken
@@ -51,6 +53,11 @@ docker compose down
 | go | 8082 |
 | rust | 8083 |
 | dashboard | 8080 |
+
+```bash
+docker compose --profile tools up -d mock go
+curl "localhost:8082/aggregate?account=acc-123"
+```
 
 ### Without make
 
@@ -104,48 +111,60 @@ Change a line, run `make bench`, and the dashboard's "All runs" table shows both
 
 ## Results
 
-One run on an Apple M4 Max, Docker Desktop, 4 CPUs and 2 GB per app. Java 27, Go 1.27.3, Rust 1.99.1.
+One run on an Apple M4 Max, Docker Desktop, 4 CPUs and 2 GB per app. Java 27, Go 1.27.3, Rust 1.99.1. Every run finished with 0 errors.
 
-![Dashboard, server run](docs/dashboard.jpg)
+![Dashboard, gateway run](docs/dashboard.jpg)
 
 **Batch**, 200 primes of 2048 bits, 4 threads:
 
 | | Primes/s | p50 ms | p99 ms | Peak RSS MB |
 |---|---|---|---|---|
-| Java | 16.4 | 179 | 951 | 163 |
-| Go | 15.4 | 186 | 892 | 15.7 |
-| Rust | 12.4 | 238 | 1230 | 2.6 |
+| Java | 17.2 | 176 | 981 | 141 |
+| Go | 15.2 | 202 | 884 | 14.0 |
+| Rust | 11.9 | 228 | 1430 | 2.8 |
 
 **Server**, 2000 virtual users, 512-bit primes, 2 s think time, 60 s:
 
 | | Requests/s | p50 ms | p99 ms | Peak RSS MB | CPU % |
 |---|---|---|---|---|---|
-| Java | 890 | 2.8 | 10.3 | 242 | 241 |
-| Go | 861 | 33.7 | 448 | 22.3 | 346 |
-| Rust | 890 | 4.1 | 15.7 | 4.5 | 292 |
+| Java | 891 | 2.7 | 10.0 | 275 | 236 |
+| Go | 864 | 35.4 | 402 | 22.9 | 346 |
+| Rust | 891 | 4.1 | 16.0 | 4.9 | 292 |
+
+**Gateway**, 4000 virtual users, 3 downstream calls per request (30 ± 10 ms each), 2 s think time, 60 s:
+
+| | Requests/s | p50 ms | p99 ms | Peak RSS MB | CPU % |
+|---|---|---|---|---|---|
+| Java | 1753 | 36.8 | 41.2 | 473 | 82 |
+| Go | 1755 | 36.7 | 41.1 | 31.5 | 35 |
+| Rust | 1753 | 36.7 | 41.1 | 19.8 | 22 |
+
+The mock downstream used 15% of its CPU in each gateway run, so it was not the limit.
 
 What the numbers show:
 
-- At 2048 bits Java and Go are close and Rust is 20 to 25% slower. `num-bigint` is portable Rust, while `BigInteger` has JIT intrinsics and `math/big` has assembly.
-- At 512 bits the order changes. A batch run of 4000 primes gives Java about 1420/s, Rust 1265/s and Go 990/s, so Go spends more CPU per prime on small numbers.
-- Under load that extra CPU turns into latency. Go serves the same traffic at 87% CPU, Java at 60%, and queueing near saturation grows much faster than load. Same throughput, 40x the p99.
+- At 2048 bits Java leads, Go is close and Rust is 20 to 30% slower. `num-bigint` is portable Rust, while `BigInteger` has JIT intrinsics and `math/big` has assembly.
+- At 512 bits Go falls behind. A batch run of 4000 primes gives Java about 1420/s, Rust 1265/s and Go 990/s, so Go spends more CPU per prime on small numbers.
+- Under load that extra CPU turns into latency. Go serves the same traffic at 87% CPU, Java at 59%, and queueing near saturation grows much faster than load. Same throughput, 40x the p99.
 - Go's garbage collector is not the main cost. The heap stays around 5 MB, so it runs about 200 cycles per second, but those take 3% of the CPU. `GOGC=400` cuts the p99 to about 120 ms with the same CPU use. Try it with `make server LANGS=go GOGC=400`.
-- Memory is where the runtimes differ most: about 240 MB for the JVM, 22 MB for Go, 4.5 MB for Rust, for the same work.
+- In the gateway, where the work is waiting on other services, all three give the same throughput and latency. The cost is what differs: for the same 1750 requests per second, Java uses 3.7 times the CPU of Rust and Go 1.6 times.
+- Memory is where the runtimes differ most. In the gateway run: 473 MB for the JVM, 31.5 MB for Go, 19.8 MB for Rust. With `JAVA_OPTS=-Xmx128m` Java handles the same load at 337 MB, so most of the JVM's memory is the runtime itself, not the heap.
 
 Run it on your own machine before you quote any of this. See [METHODOLOGY.md](METHODOLOGY.md) for the limits.
 
 ## Layout
 
 ```
-apps/java     Java 27, no framework. HttpServer on virtual threads, Maven, JUnit
+apps/java     Java 27, no framework. HttpServer and HttpClient on virtual threads, Jackson, Maven, JUnit
 apps/go       Go 1.27, standard library only
-apps/rust     Rust 1.99, axum, tokio, rayon, num-bigint
+apps/rust     Rust 1.99, axum, tokio, rayon, num-bigint, reqwest, serde
 loadgen       Go load generator, shares the CSV writer with apps/go
+mock          Go mock of three downstream REST APIs, with latency and error injection
 dashboard     React 19, Vite, Recharts, served by nginx
 results       CSV output, mounted into every container
 ```
 
-Each app reads its settings from the environment: `MODE` (`batch` or `server`), `BITS`, `COUNT`, `CONCURRENCY`, `ROUNDS`, `RUN_ID`. The CSV schema and the HTTP contract are in [METHODOLOGY.md](METHODOLOGY.md), together with what the numbers do not tell you.
+Each app reads its settings from the environment: `MODE` (`batch` or `server`), `BITS`, `COUNT`, `CONCURRENCY`, `ROUNDS`, `RUN_ID`, `DOWNSTREAM_URL`. The CSV schema and the HTTP contract are in [METHODOLOGY.md](METHODOLOGY.md), together with what the numbers do not tell you.
 
 ## Testing
 
