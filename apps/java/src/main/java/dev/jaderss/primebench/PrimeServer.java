@@ -21,6 +21,13 @@ final class PrimeServer {
     private PrimeServer() {}
 
     static void run(Config config) throws IOException {
+        HttpServer server = start(config);
+        System.out.printf(
+                "java %s listening on :%d%n",
+                RunInfo.langVersion(), server.getAddress().getPort());
+    }
+
+    static HttpServer start(Config config) throws IOException {
         var generator = new PrimeGenerator(config.rounds());
         var server = HttpServer.create(new InetSocketAddress(config.port()), BACKLOG);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
@@ -30,7 +37,7 @@ final class PrimeServer {
         server.createContext("/stats", get(PrimeServer::stats));
         server.createContext("/health", get(exchange -> respond(exchange, 200, "text/plain", "ok")));
         server.start();
-        System.out.printf("java %s listening on :%d%n", RunInfo.langVersion(), config.port());
+        return server;
     }
 
     private static HttpHandler get(HttpHandler handler) {

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 )
@@ -20,5 +23,70 @@ func TestParseBits(t *testing.T) {
 		if _, err := parseBits(values, 1024); err == nil {
 			t.Errorf("%q: want an error", query)
 		}
+	}
+}
+
+func TestServerEndpoints(t *testing.T) {
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/accounts/acc-7":
+			w.Write([]byte(sampleAccount))
+		case "/accounts/acc-7/transactions":
+			w.Write([]byte(sampleTransactions))
+		case "/rates":
+			w.Write([]byte(sampleRates))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer downstream.Close()
+	server := httptest.NewServer(newHandler(config{bits: 64, rounds: 5, downstream: downstream.URL}))
+	defer server.Close()
+
+	for path, want := range map[string]int{
+		"/prime": 200, "/prime?bits=128": 200, "/prime?bits=1": 400,
+		"/aggregate?account=acc-7": 200, "/aggregate?account=acc-8": 502, "/aggregate?account=acc%2F7": 400,
+		"/stats": 200, "/health": 200,
+	} {
+		resp, err := http.Get(server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("GET %s = %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+	resp, err := http.Post(server.URL+"/prime", "text/plain", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("POST /prime = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestAggregateResponseBody(t *testing.T) {
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(map[string]string{
+			"/accounts/acc-7": sampleAccount, "/accounts/acc-7/transactions": sampleTransactions, "/rates": sampleRates,
+		}[r.URL.Path]))
+	}))
+	defer downstream.Close()
+	server := httptest.NewServer(newHandler(config{bits: 64, rounds: 5, downstream: downstream.URL}))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/aggregate?account=acc-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got aggregate
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.SpentMinor != 2000 || got.BalanceEur != 11500.69 {
+		t.Errorf("got %+v", got)
 	}
 }

@@ -45,6 +45,13 @@ func main() {
 		transactions: envInt("MOCK_TRANSACTIONS", 40),
 		errorRate:    envFloat("MOCK_ERROR_RATE", 0),
 	}
+	log.Printf("mock downstream on :%s latency=%s±%s transactions=%d error_rate=%.2f",
+		cfg.port, cfg.latency, cfg.jitter, cfg.transactions, cfg.errorRate)
+	server := &http.Server{Addr: ":" + cfg.port, Handler: newHandler(cfg), ReadHeaderTimeout: 10 * time.Second}
+	log.Fatal(server.ListenAndServe())
+}
+
+func newHandler(cfg config) http.Handler {
 	transactions := transactionsJSON(cfg.transactions)
 	rates := ratesJSON()
 	mux := http.NewServeMux()
@@ -64,10 +71,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"rss_mb":%.3f,"cpu_seconds":%.3f}`, stats.RssMB, stats.CPUSeconds)
 	})
-	log.Printf("mock downstream on :%s latency=%s±%s transactions=%d (%d bytes) error_rate=%.2f",
-		cfg.port, cfg.latency, cfg.jitter, cfg.transactions, len(transactions), cfg.errorRate)
-	server := &http.Server{Addr: ":" + cfg.port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Fatal(server.ListenAndServe())
+	return mux
 }
 
 func downstream(cfg config, write http.HandlerFunc) http.HandlerFunc {

@@ -7,5 +7,7 @@ dist/
 .vscode/
 .DS_Store
 apps/go/coverage.out
+mock/coverage.out
+loadgen/coverage.out
 apps/rust/clippy-report.json
 .scannerwork/

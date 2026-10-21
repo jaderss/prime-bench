@@ -93,8 +93,10 @@ jobs:
         working-directory: apps/java
         run: ./mvnw -B org.jacoco:jacoco-maven-plugin:0.8.15:prepare-agent verify org.jacoco:jacoco-maven-plugin:0.8.15:report
       - name: Go tests with coverage
-        working-directory: apps/go
-        run: go test -coverprofile=coverage.out ./...
+        run: |
+          for module in apps/go mock loadgen; do
+            (cd "$module" && go test -coverprofile=coverage.out ./...)
+          done
       - name: Clippy report
         working-directory: apps/rust
         run: cargo clippy --release --all-targets --message-format=json > clippy-report.json

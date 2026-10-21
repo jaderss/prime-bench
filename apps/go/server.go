@@ -17,6 +17,12 @@ import (
 const minBits, maxBits = 64, 8192
 
 func serve(cfg config) error {
+	log.Printf("go %s listening on :%s", langVersion(), cfg.port)
+	server := &http.Server{Addr: ":" + cfg.port, Handler: newHandler(cfg), ReadHeaderTimeout: 10 * time.Second}
+	return server.ListenAndServe()
+}
+
+func newHandler(cfg config) http.Handler {
 	generators := sync.Pool{New: func() any { return newGenerator(cfg.rounds) }}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /prime", func(w http.ResponseWriter, r *http.Request) {
@@ -55,9 +61,7 @@ func serve(cfg config) error {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
-	log.Printf("go %s listening on :%s", langVersion(), cfg.port)
-	server := &http.Server{Addr: ":" + cfg.port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	return server.ListenAndServe()
+	return mux
 }
 
 func parseBits(query url.Values, fallback int) (int, error) {
