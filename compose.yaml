@@ -1,0 +1,75 @@
+name: prime-bench
+
+x-app: &app
+  user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+  cpus: ${APP_CPUS:-4}
+  mem_limit: ${APP_MEMORY:-2g}
+  volumes:
+    - ./results:/results
+  environment:
+    MODE: server
+    BITS: ${SERVER_BITS:-512}
+    COUNT: ${BATCH_COUNT:-200}
+    ROUNDS: ${ROUNDS:-20}
+    RUN_ID: ${RUN_ID:-local}
+    JAVA_OPTS: ${JAVA_OPTS:-}
+
+services:
+  java:
+    <<: *app
+    build:
+      context: apps/java
+      args:
+        JAVA_VERSION: ${JAVA_VERSION:-27}
+    image: prime-bench/java:${JAVA_VERSION:-27}
+    ports: ["8081:8080"]
+
+  go:
+    <<: *app
+    build:
+      context: apps/go
+      args:
+        GO_VERSION: ${GO_VERSION:-1.27}
+    image: prime-bench/go:${GO_VERSION:-1.27}
+    ports: ["8082:8080"]
+
+  rust:
+    <<: *app
+    build:
+      context: apps/rust
+      args:
+        RUST_VERSION: ${RUST_VERSION:-1.99}
+    image: prime-bench/rust:${RUST_VERSION:-1.99}
+    ports: ["8083:8080"]
+
+  loadgen:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: loadgen/Dockerfile
+      args:
+        GO_VERSION: ${GO_VERSION:-1.27}
+    image: prime-bench/loadgen
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    cpus: ${LOADGEN_CPUS:-2}
+    volumes:
+      - ./results:/results
+    environment:
+      TARGET: ${TARGET:-http://go:8080}
+      USERS: ${USERS:-2000}
+      DURATION: ${DURATION:-60s}
+      RAMP_UP: ${RAMP_UP:-15s}
+      THINK_TIME: ${THINK_TIME:-2s}
+      BITS: ${SERVER_BITS:-512}
+      RUN_ID: ${RUN_ID:-local}
+
+  dashboard:
+    build:
+      context: dashboard
+      args:
+        NODE_VERSION: ${NODE_VERSION:-26}
+        NGINX_VERSION: ${NGINX_VERSION:-1.31}
+    image: prime-bench/dashboard
+    ports: ["8080:80"]
+    volumes:
+      - ./results:/usr/share/nginx/html/results:ro
