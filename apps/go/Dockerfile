@@ -5,7 +5,7 @@ COPY go.mod ./
 COPY . ./
 RUN go vet ./... && go test ./... && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/prime-bench .
 
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/prime-bench /prime-bench
 ENV RESULTS_DIR=/results
 EXPOSE 8080
