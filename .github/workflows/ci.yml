@@ -52,9 +52,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: All three servers under a short load
-        run: make bench APP_CPUS=2 LOADGEN_CPUS=1 BATCH_BITS=512 BATCH_COUNT=40 USERS=50 DURATION=5s RAMP_UP=1s RUN_ID=ci
+        run: make bench APP_CPUS=2 LOADGEN_CPUS=1 MOCK_CPUS=1 BATCH_BITS=512 BATCH_COUNT=40 USERS=50 GATEWAY_USERS=50 DURATION=5s RAMP_UP=1s RUN_ID=ci
       - name: Every CSV has the same header and a summary row
         run: |
+          [ "$(ls results/ci_*.csv | wc -l)" -eq 9 ] || { ls results; exit 1; }
           for f in results/ci_*.csv; do grep -q '^summary,' "$f" || { echo "no summary in $f"; exit 1; }; done
           [ "$(awk 'FNR == 1' results/ci_*.csv | sort -u | wc -l)" -eq 1 ] || { awk 'FNR == 1 { print FILENAME ": " $0 }' results/ci_*.csv; exit 1; }
 

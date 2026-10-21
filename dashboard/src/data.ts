@@ -1,6 +1,6 @@
 export const LANGS = ['java', 'go', 'rust'] as const
 export type Lang = (typeof LANGS)[number]
-export type Mode = 'batch' | 'server'
+export type Mode = 'batch' | 'server' | 'gateway'
 
 const NUMERIC = [
   'elapsed_s', 'cpus', 'bits', 'concurrency', 'completed', 'errors', 'throughput_ops_s',

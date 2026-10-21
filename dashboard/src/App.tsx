@@ -14,6 +14,12 @@ const MODES: { mode: Mode; title: string; describe: (r: Result) => string }[] = 
     title: 'Server under load',
     describe: (r) => `${formatNumber(r.summary.concurrency)} virtual users requesting ${r.summary.bits}-bit primes over HTTP, ${r.summary.cpus} CPUs`,
   },
+  {
+    mode: 'gateway',
+    title: 'Gateway calling downstream APIs',
+    describe: (r) =>
+      `${formatNumber(r.summary.concurrency)} virtual users, each request fans out to 3 downstream HTTP calls and parses their JSON, ${r.summary.cpus} CPUs`,
+  },
 ]
 
 const COLUMNS: { label: string; value: (r: Result) => string }[] = [

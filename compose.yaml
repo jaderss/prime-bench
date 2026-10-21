@@ -12,6 +12,7 @@ x-app: &app
     COUNT: ${BATCH_COUNT:-200}
     ROUNDS: ${ROUNDS:-20}
     RUN_ID: ${RUN_ID:-local}
+    DOWNSTREAM_URL: http://mock:8080
     JAVA_OPTS: ${JAVA_OPTS:-}
     GOGC: ${GOGC:-}
     GODEBUG: ${GODEBUG:-}
@@ -64,6 +65,21 @@ services:
       THINK_TIME: ${THINK_TIME:-2s}
       BITS: ${SERVER_BITS:-512}
       RUN_ID: ${RUN_ID:-local}
+
+  mock:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: mock/Dockerfile
+      args:
+        GO_VERSION: ${GO_VERSION:-1.27}
+    image: prime-bench/mock
+    cpus: ${MOCK_CPUS:-1}
+    environment:
+      MOCK_LATENCY: ${MOCK_LATENCY:-30ms}
+      MOCK_JITTER: ${MOCK_JITTER:-10ms}
+      MOCK_TRANSACTIONS: ${MOCK_TRANSACTIONS:-40}
+      MOCK_ERROR_RATE: ${MOCK_ERROR_RATE:-0}
 
   dashboard:
     build:

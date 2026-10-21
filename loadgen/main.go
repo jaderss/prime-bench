@@ -18,6 +18,8 @@ import (
 	"github.com/jaderss/prime-bench/apps/go/metrics"
 )
 
+const accounts = 10000
+
 type config struct {
 	target     string
 	users      int
@@ -26,6 +28,8 @@ type config struct {
 	thinkTime  time.Duration
 	timeout    time.Duration
 	bits       int
+	scenario   string
+	mockURL    string
 	runID      string
 	resultsDir string
 }
@@ -47,6 +51,8 @@ func loadConfig() config {
 		thinkTime:  envDuration("THINK_TIME", 500*time.Millisecond),
 		timeout:    envDuration("TIMEOUT", 30*time.Second),
 		bits:       envInt("BITS", 1024),
+		scenario:   cmp.Or(os.Getenv("SCENARIO"), "prime"),
+		mockURL:    os.Getenv("MOCK_URL"),
 		runID:      cmp.Or(os.Getenv("RUN_ID"), "local"),
 		resultsDir: cmp.Or(os.Getenv("RESULTS_DIR"), "results"),
 	}
@@ -82,37 +88,60 @@ func run(cfg config) error {
 	if err != nil {
 		return err
 	}
+	nextURL, mode, bits, err := scenario(cfg)
+	if err != nil {
+		return err
+	}
+	mockBefore, _ := fetchStats(client, cfg.mockURL)
 	rec := &metrics.Recorder{}
 	info := metrics.RunInfo{
-		Lang: target.Lang, LangVersion: target.Version, Mode: "server", RunID: cfg.runID,
-		CPUs: target.CPUs, Bits: cfg.bits, Concurrency: cfg.users,
+		Lang: target.Lang, LangVersion: target.Version, Mode: mode, RunID: cfg.runID,
+		CPUs: target.CPUs, Bits: bits, Concurrency: cfg.users,
 	}
 	sampler, err := metrics.StartSampler(cfg.resultsDir, info, rec, remoteStats(client, cfg.target))
 	if err != nil {
 		return err
 	}
-	log.Printf("%d users against %s %s at %s for %s", cfg.users, target.Lang, target.Version, cfg.target, cfg.duration)
+	log.Printf("%d users, %s scenario, against %s %s at %s for %s", cfg.users, mode, target.Lang, target.Version, cfg.target, cfg.duration)
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.duration)
 	defer cancel()
-	url := fmt.Sprintf("%s/prime?bits=%d", cfg.target, cfg.bits)
+	start := time.Now()
 	var users sync.WaitGroup
 	for i := range cfg.users {
 		delay := cfg.rampUp * time.Duration(i) / time.Duration(cfg.users)
-		users.Go(func() { user(ctx, client, cfg, url, delay, rec) })
+		users.Go(func() { user(ctx, client, cfg, nextURL, delay, rec) })
 	}
 	users.Wait()
 	summary, err := sampler.Stop()
-	log.Printf("%s %s server users=%d %v", target.Lang, target.Version, cfg.users, summary)
+	log.Printf("%s %s %s users=%d %v", target.Lang, target.Version, mode, cfg.users, summary)
+	if mockAfter, mockErr := fetchStats(client, cfg.mockURL); cfg.mockURL != "" && mockErr == nil {
+		cpu := (mockAfter.CPUSeconds - mockBefore.CPUSeconds) / time.Since(start).Seconds() * 100
+		log.Printf("mock downstream cpu=%.0f%% rss=%.1fMB", cpu, mockAfter.RssMB)
+	}
 	return err
 }
 
-func user(ctx context.Context, client *http.Client, cfg config, url string, delay time.Duration, rec *metrics.Recorder) {
+func scenario(cfg config) (func() string, string, int, error) {
+	switch cfg.scenario {
+	case "prime":
+		url := fmt.Sprintf("%s/prime?bits=%d", cfg.target, cfg.bits)
+		return func() string { return url }, "server", cfg.bits, nil
+	case "gateway":
+		return func() string {
+			return fmt.Sprintf("%s/aggregate?account=acc-%d", cfg.target, rand.N(accounts))
+		}, "gateway", 0, nil
+	default:
+		return nil, "", 0, fmt.Errorf("unknown SCENARIO %q, expected prime or gateway", cfg.scenario)
+	}
+}
+
+func user(ctx context.Context, client *http.Client, cfg config, nextURL func() string, delay time.Duration, rec *metrics.Recorder) {
 	if !sleep(ctx, delay) {
 		return
 	}
 	for ctx.Err() == nil {
 		start := time.Now()
-		err := call(ctx, client, url, cfg.timeout)
+		err := call(ctx, client, nextURL(), cfg.timeout)
 		switch {
 		case ctx.Err() != nil:
 			return
