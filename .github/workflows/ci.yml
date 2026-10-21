@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    name: ${{ matrix.lang }} ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { lang: java, arg: JAVA_VERSION, version: '25' }
+          - { lang: java, arg: JAVA_VERSION, version: '27' }
+          - { lang: go, arg: GO_VERSION, version: '1.26' }
+          - { lang: go, arg: GO_VERSION, version: '1.27' }
+          - { lang: rust, arg: RUST_VERSION, version: '1.98' }
+          - { lang: rust, arg: RUST_VERSION, version: '1.99' }
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and test inside the image
+        run: docker build --build-arg ${{ matrix.arg }}=${{ matrix.version }} -t prime-bench-${{ matrix.lang }} apps/${{ matrix.lang }}
+      - name: Batch smoke run
+        run: |
+          mkdir -p results
+          docker run --rm --user "$(id -u):$(id -g)" -e MODE=batch -e BITS=512 -e COUNT=40 -e RUN_ID=ci \
+            -v "$PWD/results:/results" prime-bench-${{ matrix.lang }}
+          grep -q '^summary,${{ matrix.lang }},' results/ci_batch_${{ matrix.lang }}.csv
+
+  java-format:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/java
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Build, test and check formatting
+        run: ./mvnw -B verify
+
+  server-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: All three servers under a short load
+        run: make bench APP_CPUS=2 LOADGEN_CPUS=1 BATCH_BITS=512 BATCH_COUNT=40 USERS=50 DURATION=5s RAMP_UP=1s RUN_ID=ci
+      - name: Every CSV has a summary row
+        run: for f in results/ci_*.csv; do grep -q '^summary,' "$f" || { echo "no summary in $f"; exit 1; }; done; ls results
+
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
