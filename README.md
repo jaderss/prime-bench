@@ -2,25 +2,25 @@
 
 [![CI](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/jaderss/prime-bench/actions/workflows/ci.yml) [![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=jaderss_prime-bench&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jaderss_prime-bench) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jaderss_prime-bench&metric=coverage)](https://sonarcloud.io/summary/new_code?id=jaderss_prime-bench)
 
-Java, Go and Rust on the same work, in three scenarios: a batch job generating big probable primes on all CPUs, an HTTP server generating them for thousands of virtual users, and a gateway endpoint that calls three downstream REST APIs in parallel and parses their JSON. Every run writes a CSV with throughput, latency percentiles, memory and CPU, and a React dashboard reads them.
+Java, Go and Rust on the same work, in three scenarios: a batch job generating big probable primes on all CPUs, an HTTP server generating them for thousands of virtual users, and a gateway endpoint that calls three downstream REST APIs in parallel and parses their JSON. The gateway also runs on Spring Boot, on the JVM and as a GraalVM native image. Everything runs on Docker Compose or on Docker Desktop's Kubernetes. Every run writes a CSV with throughput, latency percentiles, memory and CPU, and a React dashboard reads them.
 
-The point is to compare the concurrency models on CPU-bound and on I/O-bound work: Java virtual threads, Go goroutines, and Rust tokio (with a rayon pool for the CPU work).
+The point is to compare the concurrency models on CPU-bound and on I/O-bound work: Java virtual threads, Go goroutines, and Rust tokio (with a rayon pool for the CPU work), and to show what a framework and native compilation cost on top.
 
 ## Running
 
-You need git, `make` and Docker running (Docker Desktop on macOS and Windows). The defaults use 6 CPUs in Docker: 4 for the app under test and 2 for the load generator. With fewer, lower `APP_CPUS` and `LOADGEN_CPUS` (see below). No JDK, Go, Rust or Node is needed on the host.
+You need git, `make` and Docker running (Docker Desktop on macOS and Windows). The defaults use 7 CPUs in Docker: 4 for the app under test, 2 for the load generator and 1 for the mock downstream. With fewer, lower `APP_CPUS`, `LOADGEN_CPUS` and `MOCK_CPUS` (see below). No JDK, Go, Rust or Node is needed on the host.
 
 ```bash
 git clone https://github.com/jaderss/prime-bench.git
 cd prime-bench
-make bench        # build, then batch, server and gateway runs for java, go and rust
+make bench        # build, then batch and server for java, go and rust, and the gateway for those plus spring
 make dashboard    # open http://localhost:8080
 make down         # stop everything
 ```
 
-`make bench` takes about eight minutes with the defaults. The first build pulls the base images and takes a few minutes more. CSVs land in `results/`, one per language and mode, named after the run (`20261021T172045Z_server_go.csv`). `make help` lists every target.
+`make bench` takes about 12 minutes with the defaults. The first build pulls the base images and compiles the native image, a few minutes more. CSVs land in `results/`, one per language and mode, named after the run (`20261021T172045Z_server_go.csv`). `make help` lists every target.
 
-For a quick first look, about two minutes:
+For a quick first look, about four minutes:
 
 ```bash
 make bench BATCH_COUNT=40 USERS=200 GATEWAY_USERS=200 DURATION=15s
@@ -35,7 +35,7 @@ make gateway MOCK_LATENCY=80ms           # slower downstream APIs
 make gateway MOCK_ERROR_RATE=0.01        # 1% of downstream calls fail
 make gateway GATEWAY_LANGS="spring spring-native"   # only the Spring variants
 make bench JAVA_VERSION=25 LANGS=java    # same benchmark on another JDK
-make bench APP_CPUS=2 LOADGEN_CPUS=1     # smaller Docker setup
+make bench APP_CPUS=2 LOADGEN_CPUS=1 MOCK_CPUS=1   # smaller Docker setup
 make dashboard DASHBOARD_PORT=9090       # 8080 already taken
 ```
 
@@ -50,7 +50,7 @@ make k8s-down     # delete the prime-bench namespace
 
 Results land in `results/` as `k8s-server` and `k8s-gateway` and show in the dashboard's Kubernetes tab. Each app is a Deployment with the same CPU and memory limits as in compose, readiness and liveness probes, and a non-root security context. The load generator runs as a Job and prints its CSV to its log, which `scripts/k8s-run.sh` saves.
 
-Docker Desktop can provision the cluster with kubeadm or kind. A kubeadm node shares Docker's image store. A kind node does not, so `scripts/k8s-load.sh` streams the images into it with the node's own `ctr`.
+Docker Desktop can provision the cluster with kubeadm or kind. A kubeadm node shares Docker's image store. A kind node does not, so `scripts/k8s-load.sh` streams the images into it with the node's own `ctr`. For that it starts a short-lived root pod with the node's filesystem mounted and deletes it when done, which is fine on a local throwaway cluster and why the script always targets the `docker-desktop` context, whatever context is active.
 
 ### Calling a server by hand
 
@@ -82,7 +82,7 @@ The make targets are thin wrappers around compose. Set `RUN_ID` yourself, otherw
 ```bash
 export HOST_UID=$(id -u) HOST_GID=$(id -g)   # Linux only
 docker compose build java go rust
-docker compose --profile tools build loadgen
+docker compose --profile tools build loadgen mock
 docker compose run --rm -e MODE=batch -e BITS=2048 -e RUN_ID=run1 go
 docker compose up -d go
 docker compose run --rm -e TARGET=http://go:8080 -e RUN_ID=run1 loadgen
@@ -106,10 +106,13 @@ Without `MODE=batch` an app starts its server on port 8080 (`PORT` to change).
 
 | Error | Fix |
 |---|---|
-| `range of CPUs is from 0.01 to N` | Docker has fewer CPUs than `APP_CPUS` or `LOADGEN_CPUS`. Lower them, or raise the CPUs in Docker Desktop settings. |
+| `range of CPUs is from 0.01 to N` | Docker has fewer CPUs than `APP_CPUS`, `LOADGEN_CPUS` or `MOCK_CPUS`. Lower them, or raise the CPUs in Docker Desktop settings. |
 | `Cannot connect to the Docker daemon` | Start Docker Desktop. |
-| `port is already allocated` | Another process uses 8080 to 8083. Stop it, or use `DASHBOARD_PORT` for the dashboard. |
-| Dashboard says "No results yet" | Run `make bench` first, then reload. |
+| `port is already allocated` | Another process uses 8080 to 8085. Stop it, or use `DASHBOARD_PORT` for the dashboard. |
+| Dashboard says "No results yet" | Run `make bench` (or `make k8s-bench` for the Kubernetes tab) first, then reload. |
+| `connection to the server kubernetes.docker.internal:6443 was refused` | Kubernetes is off. Enable it in Docker Desktop settings and wait until it shows as running. |
+| Pods stuck in `ErrImageNeverPull` | The images are not on the node. Run `make k8s-up`, which loads them. |
+| `make k8s-bench` times out on a rollout | A previous run left an app scaled up. Run `make k8s-down` and start again. |
 
 ## Upgrading a language
 
@@ -121,13 +124,14 @@ GO_VERSION=1.27
 RUST_VERSION=1.99
 NODE_VERSION=26
 NGINX_VERSION=1.31
+SPRING_JAVA_VERSION=25
 ```
 
-Change a line, run `make bench`, and the dashboard's "All runs" table shows both versions next to each other. CI builds and tests every app on the current and the previous release.
+Change a line, run `make bench`, and the dashboard's "All runs" table shows both versions next to each other. CI builds and tests Java, Go and Rust on the current and the previous release, and runs every app, Spring and the native image included, in a short benchmark. Spring stays on Java 25 because that is the newest JDK GraalVM Community ships.
 
 ## Results
 
-One run on an Apple M4 Max, Docker Desktop, 4 CPUs and 2 GB per app. Java 27, Go 1.27.3, Rust 1.99.1. Every run finished with 0 errors.
+One run on an Apple M4 Max, Docker Desktop, 4 CPUs and 2 GB per app. Java 27, Go 1.27.3, Rust 1.99.1, Spring Boot 4.1.1 on Java 25. Every run finished with 0 errors.
 
 ![Dashboard, gateway run](docs/dashboard.jpg)
 
@@ -165,11 +169,11 @@ What the numbers show:
 - At 512 bits Go falls behind. A batch run of 4000 primes gives Java about 1420/s, Rust 1265/s and Go 990/s, so Go spends more CPU per prime on small numbers.
 - Under load that extra CPU turns into latency. Go serves the same traffic at 87% CPU, Java at 59%, and queueing near saturation grows much faster than load. Same throughput, 40x the p99.
 - Go's garbage collector is not the main cost. The heap stays around 5 MB, so it runs about 200 cycles per second, but those take 3% of the CPU. `GOGC=400` cuts the p99 to about 120 ms with the same CPU use. Try it with `make server LANGS=go GOGC=400`.
-- In the gateway, where the work is waiting on other services, all three give the same throughput and latency. The cost is what differs: for the same 1750 requests per second, Java uses 3.7 times the CPU of Rust and Go 1.6 times.
+- In the gateway, where the work is waiting on other services, all three give the same throughput and latency. The cost is what differs: for the same 1750 requests per second, Java uses 3.7 times the CPU of Rust and Go 1.7 times.
 - Spring Boot on the JVM costs about 40% more CPU than plain Java for the same gateway (124% against 88%), with the same latency and memory. That is the framework: servlet filters, message converters, validation and observability hooks.
 - The GraalVM native build starts in 0.05 s and is lean at low load (140 MB and 18% CPU at 100 users, against 335 MB and 43% on the JVM). Under sustained load it gives that back: more CPU than the JVM, as much memory and a worse p99. GraalVM Community has no JIT to re-optimize hot code and only the serial collector, so native is for fast startup and small idle footprints, not for peak throughput.
 - On Docker Desktop's Kubernetes the same runs land within noise of compose: p99 41.0 to 41.4 ms for the JVM, Go and Rust gateways, 60 ms for Spring native, and the same CPU and memory. The extra hops through Kubernetes Services cost nothing measurable at this load, and the ranking holds.
-- Memory is where the runtimes differ most. In the gateway run: 473 MB for the JVM, 31.5 MB for Go, 19.8 MB for Rust. With `JAVA_OPTS=-Xmx128m` Java handles the same load at 337 MB, so most of the JVM's memory is the runtime itself, not the heap.
+- Memory is where the runtimes differ most. In the gateway run: 463 MB for plain Java, 490 MB for Spring, 30 MB for Go, 20 MB for Rust. With `JAVA_OPTS=-Xmx128m` plain Java handles the same load at 337 MB, so most of the JVM's memory is the runtime itself, not the heap.
 
 Run it on your own machine before you quote any of this. See [METHODOLOGY.md](METHODOLOGY.md) for the limits.
 
@@ -192,13 +196,16 @@ Each app reads its settings from the environment: `MODE` (`batch` or `server`), 
 
 ## Testing
 
-Each Dockerfile runs the language's tests before it builds the image, so `make build` fails on a broken test. The same prime and composite vectors (Mersenne primes, Carmichael numbers, a strong pseudoprime to bases 2, 3, 5 and 7) are checked in all three languages.
+Each Dockerfile runs the language's tests before it builds the image, so `make build` fails on a broken test. The same prime and composite vectors (Mersenne primes, Carmichael numbers, a strong pseudoprime to bases 2, 3, 5 and 7) are checked in all three languages, and the gateway in every language is tested over HTTP against a stub downstream. CI also runs SonarQube Cloud with coverage from JaCoCo and Go.
 
 With the toolchains installed:
 
 ```bash
-cd apps/java && ./mvnw verify           # also checks formatting
-cd apps/go   && go test ./...
-cd apps/rust && cargo test
+cd apps/java   && ./mvnw verify           # also checks formatting
+cd apps/spring && ./mvnw verify           # also checks formatting
+cd apps/go     && go test ./...
+cd apps/rust   && cargo test
+cd mock        && go test ./...
+cd loadgen     && go test ./...
 cd dashboard && npm ci && npm run dev   # dashboard with hot reload on :5173, reads ../results
 ```
