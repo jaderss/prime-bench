@@ -31,6 +31,20 @@ func serve(cfg config) error {
 		prime := g.probablePrime(bits)
 		writeJSON(w, map[string]any{"bits": bits, "prime": prime.String(), "ms": float64(time.Since(start).Microseconds()) / 1000})
 	})
+	downstream := newGateway(cfg.downstream)
+	mux.HandleFunc("GET /aggregate", func(w http.ResponseWriter, r *http.Request) {
+		accountID := r.URL.Query().Get("account")
+		if !validAccountID(accountID) {
+			http.Error(w, "account must be 1 to 64 letters, digits or dashes", http.StatusBadRequest)
+			return
+		}
+		result, err := downstream.aggregate(r.Context(), accountID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, result)
+	})
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
 		stats := metrics.ReadProcessStats()
 		writeJSON(w, map[string]any{

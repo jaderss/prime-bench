@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 final class PrimeServer {
@@ -24,6 +25,8 @@ final class PrimeServer {
         var server = HttpServer.create(new InetSocketAddress(config.port()), BACKLOG);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/prime", get(exchange -> prime(exchange, generator, config.bits())));
+        var gateway = new Gateway(config.downstreamUrl());
+        server.createContext("/aggregate", get(exchange -> aggregate(exchange, gateway)));
         server.createContext("/stats", get(PrimeServer::stats));
         server.createContext("/health", get(exchange -> respond(exchange, 200, "text/plain", "ok")));
         server.start();
@@ -58,6 +61,24 @@ final class PrimeServer {
                 200,
                 "application/json",
                 String.format(Locale.ROOT, "{\"bits\":%d,\"prime\":\"%s\",\"ms\":%.3f}", bits.get(), prime, ms));
+    }
+
+    private static void aggregate(HttpExchange exchange, Gateway gateway) throws IOException {
+        Optional<String> accountId =
+                queryParam(exchange.getRequestURI().getQuery(), "account").filter(Gateway::validAccountId);
+        if (accountId.isEmpty()) {
+            respond(exchange, 400, "text/plain", "account must be 1 to 64 letters, digits or dashes");
+            return;
+        }
+        try {
+            String body = Gateway.JSON.writeValueAsString(gateway.aggregate(accountId.get()));
+            respond(exchange, 200, "application/json", body);
+        } catch (ExecutionException e) {
+            respond(exchange, 502, "text/plain", String.valueOf(e.getCause().getMessage()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            respond(exchange, 502, "text/plain", "interrupted");
+        }
     }
 
     private static void stats(HttpExchange exchange) throws IOException {

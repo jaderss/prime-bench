@@ -19,6 +19,7 @@ type config struct {
 	rounds      int
 	runID       string
 	resultsDir  string
+	downstream  string
 }
 
 func loadConfig() config {
@@ -31,6 +32,7 @@ func loadConfig() config {
 		rounds:      envInt("ROUNDS", 20),
 		runID:       env("RUN_ID", "local"),
 		resultsDir:  env("RESULTS_DIR", "results"),
+		downstream:  env("DOWNSTREAM_URL", "http://mock:8080"),
 	}
 }
 

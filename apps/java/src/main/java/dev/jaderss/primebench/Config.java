@@ -3,7 +3,15 @@ package dev.jaderss.primebench;
 import java.util.Optional;
 
 record Config(
-        String mode, int port, int bits, int count, int concurrency, int rounds, String runId, String resultsDir) {
+        String mode,
+        int port,
+        int bits,
+        int count,
+        int concurrency,
+        int rounds,
+        String runId,
+        String resultsDir,
+        String downstreamUrl) {
 
     static Config fromEnv() {
         return new Config(
@@ -14,7 +22,8 @@ record Config(
                 envInt("CONCURRENCY", Runtime.getRuntime().availableProcessors()),
                 envInt("ROUNDS", 20),
                 env("RUN_ID", "local"),
-                env("RESULTS_DIR", "results"));
+                env("RESULTS_DIR", "results"),
+                env("DOWNSTREAM_URL", "http://mock:8080"));
     }
 
     private static String env(String key, String fallback) {

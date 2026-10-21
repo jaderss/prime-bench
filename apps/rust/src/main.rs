@@ -1,4 +1,5 @@
 mod batch;
+mod gateway;
 mod metrics;
 mod prime;
 mod server;
@@ -16,6 +17,7 @@ pub struct Config {
     rounds: u32,
     run_id: String,
     results_dir: String,
+    downstream_url: String,
 }
 
 impl Config {
@@ -29,6 +31,7 @@ impl Config {
             rounds: env_or("ROUNDS", 20),
             run_id: env_or("RUN_ID", "local".to_string()),
             results_dir: env_or("RESULTS_DIR", "results".to_string()),
+            downstream_url: env_or("DOWNSTREAM_URL", "http://mock:8080".to_string()),
         }
     }
 }

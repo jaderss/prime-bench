@@ -9,6 +9,7 @@ COPY src src
 RUN ./mvnw -q -B -Djava.release=${JAVA_VERSION} package
 
 FROM eclipse-temurin:${JAVA_VERSION}-jre
+COPY --from=build /src/target/lib /app/lib
 COPY --from=build /src/target/prime-bench.jar /app/prime-bench.jar
 USER 65532:65532
 ENV RESULTS_DIR=/results

@@ -11,16 +11,18 @@ use serde_json::json;
 use tokio::sync::oneshot;
 
 use crate::Config;
+use crate::gateway::{Gateway, valid_account_id};
 use crate::metrics::{LANG, LANG_VERSION, ProcessStats, cpus};
 use crate::prime::Generator;
 
 const MIN_BITS: u64 = 64;
 const MAX_BITS: u64 = 8192;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct AppState {
     generator: Generator,
     default_bits: u64,
+    gateway: Gateway,
 }
 
 #[derive(Deserialize)]
@@ -28,13 +30,20 @@ struct PrimeQuery {
     bits: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct AggregateQuery {
+    account: Option<String>,
+}
+
 pub async fn run(config: &Config) -> io::Result<()> {
     let state = AppState {
         generator: Generator::new(config.rounds),
         default_bits: config.bits,
+        gateway: Gateway::new(&config.downstream_url),
     };
     let app = Router::new()
         .route("/prime", get(prime))
+        .route("/aggregate", get(aggregate))
         .route("/stats", get(stats))
         .route("/health", get(|| async { "ok" }))
         .with_state(state);
@@ -60,6 +69,20 @@ async fn prime(State(state): State<AppState>, Query(query): Query<PrimeQuery>) -
             Json(json!({ "bits": bits, "prime": prime.to_string(), "ms": ms })).into_response()
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+async fn aggregate(State(state): State<AppState>, Query(query): Query<AggregateQuery>) -> Response {
+    let Some(account_id) = query.account.filter(|id| valid_account_id(id)) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "account must be 1 to 64 letters, digits or dashes",
+        )
+            .into_response();
+    };
+    match state.gateway.aggregate(&account_id).await {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => (StatusCode::BAD_GATEWAY, error.to_string()).into_response(),
     }
 }
 
