@@ -22,7 +22,7 @@ class GatewayTest {
             + "{\"id\":\"tx-2\",\"amountMinor\":650000,\"category\":\"salary\"},"
             + "{\"id\":\"tx-3\",\"amountMinor\":-750,\"category\":\"transport\"}]}";
     static final String RATES = "{\"base\":\"USD\",\"rates\":{\"EUR\":0.92,\"GBP\":0.79}}";
-    static final Gateway.Aggregate EXPECTED = new Gateway.Aggregate("acc-7", "USD", 1250075, 3, 2000, 650000, 11500.69);
+    static final Gateway.Aggregate EXPECTED = new Gateway.Aggregate("acc-7", "USD", 1250075, 3, 2000, 650000, 1150069);
 
     @Test
     void summarizeTotalsSpentReceivedAndConvertsBalance() {
@@ -55,7 +55,7 @@ class GatewayTest {
 
             assertThatThrownBy(() -> gateway.aggregate("acc-7"))
                     .isInstanceOf(ExecutionException.class)
-                    .hasMessageContaining("answered 404");
+                    .hasMessageContaining("downstream answered 404");
         } finally {
             downstream.stop(0);
         }
@@ -83,5 +83,27 @@ class GatewayTest {
 
     private static String url(HttpServer server) {
         return "http://localhost:" + server.getAddress().getPort();
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "{\"accountId\":\"acc-7\"}",
+                "{\"accountId\":\"acc-7\",\"transactions\":null}",
+                "{\"transactions\":[{\"id\":\"tx-1\"}]}"
+            })
+    void aggregateFailsWhenDownstreamJsonMissesRequiredFields(String transactions) throws IOException {
+        HttpServer downstream = stub(Map.of(
+                "/accounts/acc-7", ACCOUNT,
+                "/accounts/acc-7/transactions", transactions,
+                "/rates", RATES));
+        try {
+            Gateway gateway = new Gateway(url(downstream));
+
+            assertThatThrownBy(() -> gateway.aggregate("acc-7")).isInstanceOf(ExecutionException.class);
+        } finally {
+            downstream.stop(0);
+        }
     }
 }

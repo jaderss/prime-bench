@@ -20,7 +20,7 @@ class AggregateServiceTest {
                 new TransactionList(List.of(new Transaction(-1250), new Transaction(650000), new Transaction(-750))),
                 new Rates(Map.of("EUR", 0.92, "GBP", 0.79)));
 
-        assertThat(aggregate).isEqualTo(new Aggregate("acc-7", "USD", 1250075, 3, 2000, 650000, 11500.69));
+        assertThat(aggregate).isEqualTo(new Aggregate("acc-7", "USD", 1250075, 3, 2000, 650000, 1150069));
     }
 
     @Test
@@ -28,6 +28,6 @@ class AggregateServiceTest {
         Aggregate aggregate = AggregateService.combine(
                 new Account("acc-7", "USD", 100), new TransactionList(List.of()), new Rates(Map.of()));
 
-        assertThat(aggregate.balanceEur()).isZero();
+        assertThat(aggregate.balanceEurMinor()).isZero();
     }
 }

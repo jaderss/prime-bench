@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -25,7 +27,7 @@ func TestSummarizeTotalsSpentReceivedAndConvertsBalance(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	want := aggregate{AccountID: "acc-7", Currency: "USD", BalanceMinor: 1250075, Transactions: 3, SpentMinor: 2000, ReceivedMinor: 650000, BalanceEur: 11500.69}
+	want := aggregate{AccountID: "acc-7", Currency: "USD", BalanceMinor: 1250075, Transactions: 3, SpentMinor: 2000, ReceivedMinor: 650000, BalanceEurMinor: 1150069}
 	if got := summarize(acct, txs, rates); got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
@@ -40,7 +42,7 @@ func TestAggregateCallsAllThreeDownstreamEndpoints(t *testing.T) {
 	defer downstream.Close()
 
 	got, err := newGateway(downstream.URL).aggregate(context.Background(), "acc-7")
-	if err != nil || got.Transactions != 3 || got.BalanceEur != 11500.69 {
+	if err != nil || got.Transactions != 3 || got.BalanceEurMinor != 1150069 {
 		t.Errorf("got %+v, %v", got, err)
 	}
 }
@@ -61,5 +63,31 @@ func TestValidAccountID(t *testing.T) {
 		if got := validAccountID(id); got != want {
 			t.Errorf("%q: got %v, want %v", id, got, want)
 		}
+	}
+}
+
+func TestAggregateFailsWhenDownstreamJSONMissesRequiredFields(t *testing.T) {
+	for _, transactions := range []string{
+		`{"accountId":"acc-7"}`,
+		`{"accountId":"acc-7","transactions":null}`,
+		`{"transactions":[{"id":"tx-1"}]}`,
+	} {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /accounts/acc-7", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(sampleAccount)) })
+		mux.HandleFunc("GET /accounts/acc-7/transactions", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(transactions)) })
+		mux.HandleFunc("GET /rates", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(sampleRates)) })
+		downstream := httptest.NewServer(mux)
+		_, err := newGateway(downstream.URL).aggregate(context.Background(), "acc-7")
+		downstream.Close()
+		if !errors.Is(err, errIncompleteResponse) {
+			t.Errorf("%s: got %v, want errIncompleteResponse", transactions, err)
+		}
+	}
+}
+
+func TestUnreachableDownstreamErrorLeavesOutTheAccount(t *testing.T) {
+	_, err := newGateway("http://127.0.0.1:1").aggregate(context.Background(), "acc-7")
+	if err == nil || strings.Contains(err.Error(), "acc-7") {
+		t.Errorf("got %v", err)
 	}
 }

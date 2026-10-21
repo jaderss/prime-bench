@@ -1,5 +1,7 @@
 package dev.jaderss.primebench;
 
+import static java.lang.System.Logger.Level.WARNING;
+
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -17,6 +19,8 @@ final class PrimeServer {
     private static final int MIN_BITS = 64;
     private static final int MAX_BITS = 8192;
     private static final int BACKLOG = 4096;
+    private static final String DOWNSTREAM_UNAVAILABLE = "downstream unavailable";
+    private static final System.Logger LOG = System.getLogger(PrimeServer.class.getName());
 
     private PrimeServer() {}
 
@@ -81,11 +85,18 @@ final class PrimeServer {
             String body = Gateway.JSON.writeValueAsString(gateway.aggregate(accountId.get()));
             respond(exchange, 200, "application/json", body);
         } catch (ExecutionException e) {
-            respond(exchange, 502, "text/plain", String.valueOf(e.getCause().getMessage()));
+            LOG.log(WARNING, "downstream call failed: {0}", describe(e.getCause()));
+            respond(exchange, 502, "text/plain", DOWNSTREAM_UNAVAILABLE);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            respond(exchange, 502, "text/plain", "interrupted");
+            respond(exchange, 502, "text/plain", DOWNSTREAM_UNAVAILABLE);
         }
+    }
+
+    private static String describe(Throwable cause) {
+        return cause instanceof IOException && cause.getMessage() != null
+                ? cause.getMessage()
+                : cause.getClass().getSimpleName();
     }
 
     private static void stats(HttpExchange exchange) throws IOException {

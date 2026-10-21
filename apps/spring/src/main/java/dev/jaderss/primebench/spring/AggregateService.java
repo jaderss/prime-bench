@@ -18,7 +18,7 @@ class AggregateService {
             int transactions,
             long spentMinor,
             long receivedMinor,
-            double balanceEur) {}
+            long balanceEurMinor) {}
 
     private final DownstreamClient downstream;
     private final AsyncTaskExecutor executor;
@@ -57,6 +57,6 @@ class AggregateService {
                 list.transactions().size(),
                 spent,
                 received,
-                Math.round(account.balanceMinor() * eurRate) / 100.0);
+                Math.round(account.balanceMinor() * eurRate));
     }
 }

@@ -40,7 +40,7 @@ pub struct Aggregate {
     transactions: usize,
     spent_minor: i64,
     received_minor: i64,
-    balance_eur: f64,
+    balance_eur_minor: i64,
 }
 
 #[derive(Clone)]
@@ -106,7 +106,7 @@ pub fn summarize(account: Account, list: TransactionList, rates: Rates) -> Aggre
         transactions: list.transactions.len(),
         spent_minor,
         received_minor,
-        balance_eur: (account.balance_minor as f64 * eur).round() / 100.0,
+        balance_eur_minor: (account.balance_minor as f64 * eur).round() as i64,
     }
 }
 
@@ -119,10 +119,7 @@ pub fn valid_account_id(id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const ACCOUNT: &str = r#"{"id":"acc-7","owner":"Ada Example","currency":"USD","balanceMinor":1250075,"status":"active"}"#;
-    const TRANSACTIONS: &str = r#"{"accountId":"acc-7","transactions":[{"id":"tx-1","amountMinor":-1250,"category":"groceries"},{"id":"tx-2","amountMinor":650000,"category":"salary"},{"id":"tx-3","amountMinor":-750,"category":"transport"}]}"#;
-    const RATES: &str = r#"{"base":"USD","rates":{"EUR":0.92,"GBP":0.79}}"#;
+    use crate::test_support::{ACCOUNT, RATES, TRANSACTIONS, stub};
 
     fn expected() -> Aggregate {
         Aggregate {
@@ -132,7 +129,7 @@ mod tests {
             transactions: 3,
             spent_minor: 2000,
             received_minor: 650000,
-            balance_eur: 11500.69,
+            balance_eur_minor: 1150069,
         }
     }
 
@@ -144,17 +141,6 @@ mod tests {
             serde_json::from_str(RATES).unwrap(),
         );
         assert_eq!(aggregate, expected());
-    }
-
-    async fn stub(routes: Vec<(&'static str, &'static str)>) -> String {
-        let mut app = axum::Router::new();
-        for (path, body) in routes {
-            app = app.route(path, axum::routing::get(move || async move { body }));
-        }
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        url
     }
 
     #[tokio::test]
@@ -188,6 +174,26 @@ mod tests {
             ("acc 7", false),
         ] {
             assert_eq!(valid_account_id(id), expected, "{id}");
+        }
+    }
+
+    #[tokio::test]
+    async fn aggregate_fails_when_downstream_json_misses_required_fields() {
+        for transactions in [
+            r#"{"accountId":"acc-7"}"#,
+            r#"{"accountId":"acc-7","transactions":null}"#,
+            r#"{"transactions":[{"id":"tx-1"}]}"#,
+        ] {
+            let url = stub(vec![
+                ("/accounts/acc-7", ACCOUNT),
+                ("/accounts/acc-7/transactions", transactions),
+                ("/rates", RATES),
+            ])
+            .await;
+            assert!(
+                Gateway::new(&url).aggregate("acc-7").await.is_err(),
+                "{transactions}"
+            );
         }
     }
 }

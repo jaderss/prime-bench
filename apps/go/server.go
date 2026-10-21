@@ -46,7 +46,8 @@ func newHandler(cfg config) http.Handler {
 		}
 		result, err := downstream.aggregate(r.Context(), accountID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			log.Printf("downstream call failed: %v", err)
+			http.Error(w, "downstream unavailable", http.StatusBadGateway)
 			return
 		}
 		writeJSON(w, result)

@@ -3,6 +3,8 @@ mod gateway;
 mod metrics;
 mod prime;
 mod server;
+#[cfg(test)]
+mod test_support;
 
 use std::env;
 use std::io;

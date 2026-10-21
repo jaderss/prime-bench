@@ -36,20 +36,24 @@ struct AggregateQuery {
 }
 
 pub async fn run(config: &Config) -> io::Result<()> {
+    let app = router(config.rounds, config.bits, &config.downstream_url);
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", config.port)).await?;
+    println!("rust {LANG_VERSION} listening on :{}", config.port);
+    axum::serve(listener, app).await
+}
+
+fn router(rounds: u32, default_bits: u64, downstream_url: &str) -> Router {
     let state = AppState {
-        generator: Generator::new(config.rounds),
-        default_bits: config.bits,
-        gateway: Gateway::new(&config.downstream_url),
+        generator: Generator::new(rounds),
+        default_bits,
+        gateway: Gateway::new(downstream_url),
     };
-    let app = Router::new()
+    Router::new()
         .route("/prime", get(prime))
         .route("/aggregate", get(aggregate))
         .route("/stats", get(stats))
         .route("/health", get(|| async { "ok" }))
-        .with_state(state);
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", config.port)).await?;
-    println!("rust {LANG_VERSION} listening on :{}", config.port);
-    axum::serve(listener, app).await
+        .with_state(state)
 }
 
 async fn prime(State(state): State<AppState>, Query(query): Query<PrimeQuery>) -> Response {
@@ -82,7 +86,10 @@ async fn aggregate(State(state): State<AppState>, Query(query): Query<AggregateQ
     };
     match state.gateway.aggregate(&account_id).await {
         Ok(result) => Json(result).into_response(),
-        Err(error) => (StatusCode::BAD_GATEWAY, error.to_string()).into_response(),
+        Err(error) => {
+            eprintln!("downstream call failed: {}", error.without_url());
+            (StatusCode::BAD_GATEWAY, "downstream unavailable").into_response()
+        }
     }
 }
 
@@ -116,5 +123,60 @@ mod tests {
         assert_eq!(parse_bits(Some("9000"), 1024), None);
         assert_eq!(parse_bits(Some("abc"), 1024), None);
         assert_eq!(parse_bits(Some(""), 1024), None);
+    }
+
+    use super::router;
+    use crate::test_support::{ACCOUNT, RATES, TRANSACTIONS, stub};
+
+    #[tokio::test]
+    async fn endpoints_answer_with_the_expected_status() {
+        let downstream = stub(vec![
+            ("/accounts/acc-7", ACCOUNT),
+            ("/accounts/acc-7/transactions", TRANSACTIONS),
+            ("/rates", RATES),
+        ])
+        .await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, router(5, 64, &downstream))
+                .await
+                .unwrap()
+        });
+
+        for (path, expected) in [
+            ("/prime", 200),
+            ("/prime?bits=128", 200),
+            ("/prime?bits=1", 400),
+            ("/aggregate?account=acc-7", 200),
+            ("/aggregate?account=acc-8", 502),
+            ("/aggregate?account=acc%2F7", 400),
+            ("/aggregate", 400),
+            ("/stats", 200),
+            ("/health", 200),
+        ] {
+            let status = reqwest::get(format!("{base}{path}"))
+                .await
+                .unwrap()
+                .status();
+            assert_eq!(status.as_u16(), expected, "{path}");
+        }
+        let body = reqwest::get(format!("{base}/aggregate?account=acc-8"))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert_eq!(body, "downstream unavailable");
+        let aggregate = reqwest::get(format!("{base}/aggregate?account=acc-7"))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(
+            aggregate.contains(r#""balanceEurMinor":1150069"#),
+            "{aggregate}"
+        );
     }
 }

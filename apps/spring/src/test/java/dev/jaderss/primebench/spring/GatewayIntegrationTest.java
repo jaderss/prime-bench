@@ -27,6 +27,10 @@ class GatewayIntegrationTest {
     private static final Map<String, String> BODIES = Map.of(
             "/accounts/acc-7",
             "{\"id\":\"acc-7\",\"owner\":\"Ada Example\",\"currency\":\"USD\",\"balanceMinor\":1250075}",
+            "/accounts/acc-9",
+            "{\"id\":\"acc-9\",\"currency\":\"USD\",\"balanceMinor\":100}",
+            "/accounts/acc-9/transactions",
+            "{\"accountId\":\"acc-9\"}",
             "/accounts/acc-7/transactions",
             "{\"accountId\":\"acc-7\",\"transactions\":[{\"id\":\"tx-1\",\"amountMinor\":-1250},"
                     + "{\"id\":\"tx-2\",\"amountMinor\":650000},{\"id\":\"tx-3\",\"amountMinor\":-750}]}",
@@ -54,6 +58,7 @@ class GatewayIntegrationTest {
     @CsvSource({
         "/aggregate?account=acc-7, 200",
         "/aggregate?account=acc-8, 502",
+        "/aggregate?account=acc-9, 502",
         "/aggregate?account=acc%2F7, 400",
         "/aggregate, 400",
         "/stats, 200",
@@ -66,7 +71,14 @@ class GatewayIntegrationTest {
     @Test
     void aggregateReturnsTheCombinedJson() throws Exception {
         assertThat(get("/aggregate?account=acc-7").body())
-                .contains("\"spentMinor\":2000", "\"receivedMinor\":650000", "\"balanceEur\":11500.69");
+                .contains("\"spentMinor\":2000", "\"receivedMinor\":650000", "\"balanceEurMinor\":1150069");
+    }
+
+    @Test
+    void downstreamFailureHidesTheDetails() throws Exception {
+        assertThat(get("/aggregate?account=acc-9").body())
+                .contains("downstream unavailable")
+                .doesNotContain("acc-9", "Exception", "http://");
     }
 
     private HttpResponse<String> get(String path) throws Exception {

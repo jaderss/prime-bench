@@ -1,5 +1,7 @@
 package dev.jaderss.primebench;
 
+import static tools.jackson.databind.DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES;
+import static tools.jackson.databind.DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES;
 import static tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES;
 
 import java.io.IOException;
@@ -19,8 +21,10 @@ import tools.jackson.databind.json.JsonMapper;
 
 final class Gateway {
 
-    static final JsonMapper JSON =
-            JsonMapper.builder().disable(FAIL_ON_UNKNOWN_PROPERTIES).build();
+    static final JsonMapper JSON = JsonMapper.builder()
+            .disable(FAIL_ON_UNKNOWN_PROPERTIES)
+            .enable(FAIL_ON_MISSING_CREATOR_PROPERTIES, FAIL_ON_NULL_CREATOR_PROPERTIES)
+            .build();
 
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
     private static final Pattern ACCOUNT_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
@@ -40,7 +44,7 @@ final class Gateway {
             int transactions,
             long spentMinor,
             long receivedMinor,
-            double balanceEur) {}
+            long balanceEurMinor) {}
 
     private final HttpClient client;
     private final URI base;
@@ -73,7 +77,7 @@ final class Gateway {
                 received += transaction.amountMinor();
             }
         }
-        double balanceEur = Math.round(account.balanceMinor() * rates.rates().getOrDefault("EUR", 0.0)) / 100.0;
+        long balanceEurMinor = Math.round(account.balanceMinor() * rates.rates().getOrDefault("EUR", 0.0));
         return new Aggregate(
                 account.id(),
                 account.currency(),
@@ -81,7 +85,7 @@ final class Gateway {
                 list.transactions().size(),
                 spent,
                 received,
-                balanceEur);
+                balanceEurMinor);
     }
 
     static boolean validAccountId(String id) {
@@ -95,7 +99,7 @@ final class Gateway {
                 .build();
         HttpResponse<byte[]> response = client.send(request, BodyHandlers.ofByteArray());
         if (response.statusCode() != 200) {
-            throw new IOException("%s answered %d".formatted(path, response.statusCode()));
+            throw new IOException("downstream answered %d".formatted(response.statusCode()));
         }
         return JSON.readValue(response.body(), type);
     }

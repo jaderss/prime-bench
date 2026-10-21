@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -86,7 +88,22 @@ func TestAggregateResponseBody(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.SpentMinor != 2000 || got.BalanceEur != 11500.69 {
+	if got.SpentMinor != 2000 || got.BalanceEurMinor != 1150069 {
 		t.Errorf("got %+v", got)
+	}
+}
+
+func TestDownstreamFailureHidesTheDetails(t *testing.T) {
+	server := httptest.NewServer(newHandler(config{bits: 64, rounds: 5, downstream: "http://127.0.0.1:1"}))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/aggregate?account=acc-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadGateway || strings.TrimSpace(string(body)) != "downstream unavailable" {
+		t.Errorf("got %d %q", resp.StatusCode, body)
 	}
 }

@@ -53,7 +53,7 @@ GET /accounts/acc-123/transactions   40 transactions, 5.9 KB
 GET /rates                           20 exchange rates, 305 bytes
 
 {"accountId":"acc-123","currency":"USD","balanceMinor":1250075,"transactions":40,
- "spentMinor":...,"receivedMinor":...,"balanceEur":11500.69}
+ "spentMinor":...,"receivedMinor":...,"balanceEurMinor":1150069}
 ```
 
 | | HTTP client | JSON | Fan-out |
@@ -62,7 +62,7 @@ GET /rates                           20 exchange rates, 305 bytes
 | Go | `net/http` | `encoding/json` | one goroutine per call |
 | Rust | reqwest | serde_json | `tokio::try_join!` |
 
-The downstream is one shared mock (`mock/`, Go), so all three call the same thing. It waits `MOCK_LATENCY` ± `MOCK_JITTER` (30 ± 10 ms) before answering, can fail a share of calls (`MOCK_ERROR_RATE`), and has its own CPU limit (`MOCK_CPUS`). The load generator logs the mock's CPU use after each run, to show it is not the bottleneck. A downstream error or timeout (5 s) turns into a 502, which the load generator counts as an error.
+The downstream is one shared mock (`mock/`, Go), so all three call the same thing. It waits `MOCK_LATENCY` ± `MOCK_JITTER` (30 ± 10 ms) before answering, can fail a share of calls (`MOCK_ERROR_RATE`), and has its own CPU limit (`MOCK_CPUS`). The load generator logs the mock's CPU use after each run, to show it is not the bottleneck. A downstream error, a timeout (5 s) or a response missing a required field turns into a 502 with the body `downstream unavailable`, the same in all four. The detail goes to the server log without the account id, never to the client. Money stays in integer minor units end to end, `balanceEurMinor` included.
 
 For fairness, all three use HTTP/1.1 with keep-alive and a pool that does not cap connections: Go's default of 2 idle connections per host is raised to 4096, reqwest gets the same, and Java's client has no limit by default. Every request waits for the slowest of its three calls, so the gateway p50 starts around the mock's latency and the tail follows its jitter.
 

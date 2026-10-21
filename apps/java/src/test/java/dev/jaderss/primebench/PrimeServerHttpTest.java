@@ -67,6 +67,11 @@ class PrimeServerHttpTest {
     }
 
     @Test
+    void downstreamFailureHidesTheDetails() throws Exception {
+        assertThat(send("GET", "/aggregate?account=acc-8").body()).isEqualTo("downstream unavailable");
+    }
+
+    @Test
     void rejectsOtherMethods() throws Exception {
         assertThat(send("POST", "/prime").statusCode()).isEqualTo(405);
     }
