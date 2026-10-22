@@ -50,7 +50,7 @@ make k8s-down     # delete the prime-bench namespace
 
 Results land in `results/` as `k8s-server` and `k8s-gateway` and show in the dashboard's Kubernetes tab. Each app is a Deployment with the same CPU and memory limits as in compose, readiness and liveness probes, and a non-root security context. The load generator runs as a Job and prints its CSV to its log, which `scripts/k8s-run.sh` saves.
 
-Docker Desktop can provision the cluster with kubeadm or kind. A kubeadm node shares Docker's image store. A kind node does not, so `scripts/k8s-load.sh` streams the images into it with the node's own `ctr`. For that it starts a short-lived root pod with the node's filesystem mounted and deletes it when done, which is fine on a local throwaway cluster and why the script always targets the `docker-desktop` context, whatever context is active.
+Docker Desktop can provision the cluster with kubeadm or kind. A kubeadm node shares Docker's image store. A kind node does not, so `scripts/k8s-load.sh` streams the images into it with the node's own `ctr`. For that it starts a short-lived root pod with the node's filesystem mounted and deletes it when done. That is fine on a local throwaway cluster, and it is why the script always targets the `docker-desktop` context, whatever context is active.
 
 ### Calling a server by hand
 
@@ -131,7 +131,9 @@ Change a line, run `make bench`, and the dashboard's "All runs" table shows both
 
 ## Results
 
-One run on an Apple M4 Max, Docker Desktop, 4 CPUs and 2 GB per app. Java 27, Go 1.27.3, Rust 1.99.1, Spring Boot 4.1.1 on Java 25. Every run finished with 0 errors.
+One run on an Apple M4 Max with Docker Desktop. Java 27, Go 1.27.3, Rust 1.99.1, Spring Boot 4.1.1 on Java 25. Every run finished with 0 errors.
+
+Each app is limited to 4 CPUs and 2 GB, so the comparison between languages matters more than the absolute numbers. On slower cores primes/s goes down, and the server and gateway reach saturation with fewer users. The ratios should hold: CPU per request, the p99 gap under load and memory.
 
 ![Dashboard, gateway run](docs/dashboard.jpg)
 
@@ -167,13 +169,13 @@ What the numbers show:
 
 - At 2048 bits Java leads, Go is close and Rust is 20 to 30% slower. `num-bigint` is portable Rust, while `BigInteger` has JIT intrinsics and `math/big` has assembly.
 - At 512 bits Go falls behind. A batch run of 4000 primes gives Java about 1420/s, Rust 1265/s and Go 990/s, so Go spends more CPU per prime on small numbers.
-- Under load that extra CPU turns into latency. Go serves the same traffic at 87% CPU, Java at 59%, and queueing near saturation grows much faster than load. Same throughput, 40x the p99.
+- Under load that extra CPU becomes latency. Go serves the same traffic at 87% of its CPU limit, Java at 59%. Near saturation the queue grows much faster than the load, so Go has the same throughput as Java with 40 times the p99.
 - Go's garbage collector is not the main cost. The heap stays around 5 MB, so it runs about 200 cycles per second, but those take 3% of the CPU. `GOGC=400` cuts the p99 to about 120 ms with the same CPU use. Try it with `make server LANGS=go GOGC=400`.
-- In the gateway, where the work is waiting on other services, all three give the same throughput and latency. The cost is what differs: for the same 1750 requests per second, Java uses 3.7 times the CPU of Rust and Go 1.7 times.
+- In the gateway the work is mostly waiting on other services, so all three give the same throughput and latency. The difference is the cost. For the same 1750 requests per second, Java uses 3.7 times the CPU of Rust, and Go 1.7 times.
 - Spring Boot on the JVM costs about 40% more CPU than plain Java for the same gateway (124% against 88%), with the same latency and memory. That is the framework: servlet filters, message converters, validation and observability hooks.
-- The GraalVM native build starts in 0.05 s and is lean at low load (140 MB and 18% CPU at 100 users, against 335 MB and 43% on the JVM). Under sustained load it gives that back: more CPU than the JVM, as much memory and a worse p99. GraalVM Community has no JIT to re-optimize hot code and only the serial collector, so native is for fast startup and small idle footprints, not for peak throughput.
+- The GraalVM native build starts in 0.05 s and is lean at low load (140 MB and 18% CPU at 100 users, against 335 MB and 43% on the JVM). Under sustained load it uses more CPU than the JVM, the same memory, and has a worse p99. GraalVM Community has no JIT to re-optimize hot code and only the serial collector, so native is for fast startup and small idle footprints, not for peak throughput.
 - On Docker Desktop's Kubernetes the same runs land within noise of compose: p99 41.0 to 41.4 ms for the JVM, Go and Rust gateways, 60 ms for Spring native, and the same CPU and memory. The extra hops through Kubernetes Services cost nothing measurable at this load, and the ranking holds.
-- Memory is where the runtimes differ most. In the gateway run: 463 MB for plain Java, 490 MB for Spring, 30 MB for Go, 20 MB for Rust. With `JAVA_OPTS=-Xmx128m` plain Java handles the same load at 337 MB, so most of the JVM's memory is the runtime itself, not the heap.
+- The biggest difference between the runtimes is memory. In the gateway run: 463 MB for plain Java, 490 MB for Spring, 30 MB for Go, 20 MB for Rust. With `JAVA_OPTS=-Xmx128m` plain Java handles the same load at 337 MB, so most of the JVM's memory is the runtime itself, not the heap.
 
 Run it on your own machine before you quote any of this. See [METHODOLOGY.md](METHODOLOGY.md) for the limits.
 
