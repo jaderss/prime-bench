@@ -30,8 +30,8 @@ spec:
             httpGet: {path: /health, port: 8080}
             initialDelaySeconds: 10
           resources:
-            requests: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_K8S}", ephemeral-storage: 64Mi}
-            limits: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_K8S}", ephemeral-storage: 256Mi}
+            requests: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_MB}Mi", ephemeral-storage: 64Mi}
+            limits: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_MB}Mi", ephemeral-storage: 256Mi}
           securityContext: {allowPrivilegeEscalation: false}
 ---
 apiVersion: v1

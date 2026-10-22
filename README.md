@@ -8,7 +8,7 @@ The point is to compare the concurrency models on CPU-bound and on I/O-bound wor
 
 ## Running
 
-You need git, `make` and Docker running (Docker Desktop on macOS and Windows). The defaults use 7 CPUs in Docker: 4 for the app under test, 2 for the load generator and 1 for the mock downstream. With fewer, lower `APP_CPUS`, `LOADGEN_CPUS` and `MOCK_CPUS` (see below). No JDK, Go, Rust or Node is needed on the host.
+You need git, `make` and Docker running (Docker Desktop on macOS and Windows). The defaults use 5 CPUs in Docker: 2 for the app under test, 2 for the load generator and 1 for the mock downstream. With fewer, lower `APP_CPUS`, `LOADGEN_CPUS` and `MOCK_CPUS` (see below). No JDK, Go, Rust or Node is needed on the host.
 
 ```bash
 git clone https://github.com/jaderss/prime-bench.git
@@ -35,9 +35,23 @@ make gateway MOCK_LATENCY=80ms           # slower downstream APIs
 make gateway MOCK_ERROR_RATE=0.01        # 1% of downstream calls fail
 make gateway GATEWAY_LANGS="spring spring-native"   # only the Spring variants
 make bench JAVA_VERSION=25 LANGS=java    # same benchmark on another JDK
-make bench APP_CPUS=2 LOADGEN_CPUS=1 MOCK_CPUS=1   # smaller Docker setup
+make bench LOADGEN_CPUS=1                # smaller Docker setup, 4 CPUs
 make dashboard DASHBOARD_PORT=9090       # 8080 already taken
 ```
+
+### Resources
+
+Every app gets the same resources in every scenario, on compose and on Kubernetes. They live in `.env`:
+
+| Key | Default | What it sets |
+|---|---|---|
+| `APP_CPUS` | 2 | CPU limit for each app |
+| `APP_MEMORY_MB` | 1536 | Memory limit for each app. On Kubernetes the request equals the limit |
+| `HEAP_PERCENT` | 75 | Max heap as a share of the memory limit: `-XX:MaxRAMPercentage` on the JVM, `-XX:MaximumHeapSizePercent` on the native image |
+| `JVM_GC` | ParallelGC | Garbage collector for plain Java and Spring on the JVM. The native image only has the serial collector |
+| `JAVA_OPTS` | empty | Extra JVM flags, added after the ones above |
+
+The JVM values follow the [Microsoft guide for Java in containers](https://learn.microsoft.com/en-us/azure/developer/java/containers/overview): 2 cores, ParallelGC and 75% of the memory for the heap. Without flags, the JVM uses only 25% of the container limit for the heap and picks SerialGC below 1792 MB.
 
 ### On Kubernetes
 
@@ -131,51 +145,52 @@ Change a line, run `make bench`, and the dashboard's "All runs" table shows both
 
 ## Results
 
-One run on an Apple M4 Max with Docker Desktop. Java 27, Go 1.27.3, Rust 1.99.1, Spring Boot 4.1.1 on Java 25. Every run finished with 0 errors.
+One run on an Apple M4 Max with Docker Desktop, on AC power. Java 27, Go 1.27.3, Rust 1.99.1, Spring Boot 4.1.1 on Java 25. Every app had 2 CPUs and 1.5 GB, with the JVM settings from [Resources](#resources). Every run finished with 0 errors.
 
-Each app is limited to 4 CPUs and 2 GB, so the comparison between languages matters more than the absolute numbers. On slower cores primes/s goes down, and the server and gateway reach saturation with fewer users. The ratios should hold: CPU per request, the p99 gap under load and memory.
+Since every app gets the same limits, the comparison between languages matters more than the absolute numbers. On slower cores primes/s goes down, and the server and gateway reach saturation with fewer users. The ratios should hold: CPU per request, the p99 gap under load and memory.
 
 ![Dashboard, gateway run](docs/dashboard.jpg)
 
-**Batch**, 200 primes of 2048 bits, 4 threads:
+**Batch**, 200 primes of 2048 bits, 2 threads:
 
 | | Primes/s | p50 ms | p99 ms | Peak RSS MB |
 |---|---|---|---|---|
-| Java | 17.2 | 176 | 981 | 141 |
-| Go | 15.2 | 202 | 884 | 14.0 |
-| Rust | 11.9 | 228 | 1430 | 2.8 |
+| Java | 9.26 | 168 | 786 | 110 |
+| Go | 8.72 | 166 | 1032 | 13.9 |
+| Rust | 6.31 | 260 | 1045 | 2.7 |
 
-**Server**, 2000 virtual users, 512-bit primes, 2 s think time, 60 s:
+**Server**, 1000 virtual users, 512-bit primes, 2 s think time, 60 s:
 
 | | Requests/s | p50 ms | p99 ms | Peak RSS MB | CPU % |
 |---|---|---|---|---|---|
-| Java | 891 | 2.7 | 10.0 | 275 | 236 |
-| Go | 864 | 35.4 | 402 | 22.9 | 346 |
-| Rust | 891 | 4.1 | 16.0 | 4.9 | 292 |
+| Java | 446 | 3.3 | 13.4 | 264 | 122 |
+| Go | 428 | 46.9 | 531 | 19.6 | 178 |
+| Rust | 446 | 5.3 | 28.6 | 4.2 | 145 |
 
 **Gateway**, 4000 virtual users, 3 downstream calls per request (30 ± 10 ms each), 2 s think time, 60 s:
 
 | | Requests/s | p50 ms | p99 ms | Peak RSS MB | CPU % |
 |---|---|---|---|---|---|
-| Java (no framework) | 1753 | 36.7 | 41.2 | 463 | 88 |
-| Spring Boot, JVM | 1754 | 36.8 | 41.4 | 490 | 124 |
-| Spring Boot, native | 1753 | 37.6 | 61.3 | 466 | 137 |
-| Go | 1756 | 36.6 | 41.0 | 30.0 | 40 |
-| Rust | 1753 | 36.6 | 41.0 | 20.0 | 24 |
+| Java (no framework) | 1751 | 36.8 | 41.2 | 272 | 77 |
+| Spring Boot, JVM | 1751 | 36.8 | 41.7 | 1359 | 105 |
+| Spring Boot, native | 1749 | 37.6 | 61.1 | 462 | 131 |
+| Go | 1752 | 36.7 | 41.1 | 29.5 | 31 |
+| Rust | 1751 | 36.6 | 41.0 | 19.1 | 17 |
 
-The mock downstream used 15% of its CPU in each gateway run, so it was not the limit.
+The mock downstream used 14 to 18% of its CPU in each gateway run, so it was not the limit.
 
 What the numbers show:
 
-- At 2048 bits Java leads, Go is close and Rust is 20 to 30% slower. `num-bigint` is portable Rust, while `BigInteger` has JIT intrinsics and `math/big` has assembly.
-- At 512 bits Go falls behind. A batch run of 4000 primes gives Java about 1420/s, Rust 1265/s and Go 990/s, so Go spends more CPU per prime on small numbers.
-- Under load that extra CPU becomes latency. Go serves the same traffic at 87% of its CPU limit, Java at 59%. Near saturation the queue grows much faster than the load, so Go has the same throughput as Java with 40 times the p99.
-- Go's garbage collector is not the main cost. The heap stays around 5 MB, so it runs about 200 cycles per second, but those take 3% of the CPU. `GOGC=400` cuts the p99 to about 120 ms with the same CPU use. Try it with `make server LANGS=go GOGC=400`.
-- In the gateway the work is mostly waiting on other services, so all three give the same throughput and latency. The difference is the cost. For the same 1750 requests per second, Java uses 3.7 times the CPU of Rust, and Go 1.7 times.
-- Spring Boot on the JVM costs about 40% more CPU than plain Java for the same gateway (124% against 88%), with the same latency and memory. That is the framework: servlet filters, message converters, validation and observability hooks.
-- The GraalVM native build starts in 0.05 s and is lean at low load (140 MB and 18% CPU at 100 users, against 335 MB and 43% on the JVM). Under sustained load it uses more CPU than the JVM, the same memory, and has a worse p99. GraalVM Community has no JIT to re-optimize hot code and only the serial collector, so native is for fast startup and small idle footprints, not for peak throughput.
-- On Docker Desktop's Kubernetes the same runs land within noise of compose: p99 41.0 to 41.4 ms for the JVM, Go and Rust gateways, 60 ms for Spring native, and the same CPU and memory. The extra hops through Kubernetes Services cost nothing measurable at this load, and the ranking holds.
-- The biggest difference between the runtimes is memory. In the gateway run: 463 MB for plain Java, 490 MB for Spring, 30 MB for Go, 20 MB for Rust. With `JAVA_OPTS=-Xmx128m` plain Java handles the same load at 337 MB, so most of the JVM's memory is the runtime itself, not the heap.
+- At 2048 bits Java leads, Go is close and Rust is about 30% slower. `num-bigint` is portable Rust, while `BigInteger` has JIT intrinsics and `math/big` has assembly.
+- At 512 bits Go needs more CPU per prime. For the same 430 to 450 requests per second, Go uses 178% CPU, Rust 145% and Java 122%.
+- Under load that extra CPU becomes latency. Go runs at 89% of its CPU limit, Java at 61%. Near saturation the queue grows much faster than the load, so Go has about the same throughput as Java with 40 times the p99.
+- Go's garbage collector is not the main cost. The heap stays small, so the collector runs often, but it takes a few percent of the CPU. `GOGC=400` cuts the p99 from 531 to 107 ms with about the same CPU. Try it with `make server LANGS=go GOGC=400`.
+- In the gateway the work is mostly waiting on other services, so all five give the same throughput and latency, except Spring native. The difference is the cost. For the same 1750 requests per second, Java uses 4.5 times the CPU of Rust, and Go 1.8 times.
+- Spring Boot on the JVM costs about 35% more CPU than plain Java for the same gateway (105% against 77%), with the same latency. That is the framework: servlet filters, message converters, validation and observability hooks.
+- The GraalVM native build starts in 0.05 s and is lean at low load (135 MB and 17% CPU at 100 users, against 519 MB and 26% on the JVM). Under sustained load it uses more CPU than the JVM (131% against 105%), a third of its memory, and has a worse p99 (61 ms against 42 ms). GraalVM Community has no JIT to re-optimize hot code and only the serial collector, so native is for fast startup and small footprints, not for peak throughput.
+- JVM memory follows the heap limit more than the work. ParallelGC grows the heap toward 75% of the container when the load asks for it, and does not give it back. Plain Java peaked at 272 MB in this run and at 1160 MB in the Kubernetes run of the same gateway. Spring peaked at 1.36 to 1.46 GB. With `JAVA_OPTS=-Xmx128m` plain Java handles the same load at 358 MB with the same p99, so the live data is small. Go stays at 30 MB and Rust at 19 MB.
+- At 1 CPU per app the Spring gateway fails at this load: it needs more than one core, the backlog fills the heap and the JVM runs out of memory. At 2 CPUs and 1 GB it passed on compose but was close to the limit, and on Kubernetes it lost half the throughput. At 1.5 GB it passes everywhere. Java, Go and Rust passed in all three setups.
+- On Docker Desktop's Kubernetes the same runs land within noise of compose: gateway p99 41.0 to 43.7 ms for the JVM, Go and Rust, 62.8 ms for Spring native, and the same CPU. Go's server p99 moves a lot between runs near saturation (173 ms on Kubernetes, 531 ms on compose), while Java and Rust stay within a few milliseconds.
 
 Run it on your own machine before you quote any of this. See [METHODOLOGY.md](METHODOLOGY.md) for the limits.
 

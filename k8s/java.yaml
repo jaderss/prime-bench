@@ -22,6 +22,7 @@ spec:
             - {name: ROUNDS, value: "${ROUNDS}"}
             - {name: DOWNSTREAM_URL, value: "http://mock:8080"}
             - {name: RESULTS_DIR, value: /tmp}
+            - {name: JAVA_OPTS, value: "-XX:+Use${JVM_GC} -XX:MaxRAMPercentage=${HEAP_PERCENT} ${JAVA_OPTS}"}
           ports: [{containerPort: 8080}]
           readinessProbe:
             httpGet: {path: /health, port: 8080}
@@ -30,8 +31,8 @@ spec:
             httpGet: {path: /health, port: 8080}
             initialDelaySeconds: 10
           resources:
-            requests: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_K8S}", ephemeral-storage: 64Mi}
-            limits: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_K8S}", ephemeral-storage: 256Mi}
+            requests: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_MB}Mi", ephemeral-storage: 64Mi}
+            limits: {cpu: "${APP_CPUS}", memory: "${APP_MEMORY_MB}Mi", ephemeral-storage: 256Mi}
           securityContext: {allowPrivilegeEscalation: false}
 ---
 apiVersion: v1

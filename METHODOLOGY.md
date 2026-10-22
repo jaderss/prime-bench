@@ -93,8 +93,8 @@ All three read memory and CPU the same way, from the same Linux files. In server
 ## Limits
 
 - Docker Desktop on a Mac runs Linux in a VM. Numbers are good for comparing the three languages on the same machine, not as absolute figures.
-- CPU and memory are capped per container (`APP_CPUS`, `APP_MEMORY`). All three runtimes are container aware and size their thread pools to the cap.
-- JVM memory is partly heap sizing policy: with a 2 GB container limit the default max heap is 512 MB, and G1 grows into it under load. In the gateway run, `JAVA_OPTS=-Xmx128m` handled the same load with 0 errors and the same latency, and peak RSS went from 473 to 337 MB. The rest is the JVM itself: metaspace, JIT code cache, carrier threads and HTTP client buffers.
-- No JVM tuning: default GC, no warmup phase. The first seconds of the Java run include JIT compilation, and the per-second chart shows it. Set `JAVA_OPTS` to try other flags.
+- CPU and memory are capped per container, with the same values for every app (`APP_CPUS`, `APP_MEMORY_MB`). All three runtimes are container aware and size their thread pools to the cap.
+- JVM memory is partly heap sizing policy. Without flags the JVM takes 25% of the container limit for the heap, so `.env` sets `HEAP_PERCENT=75` for the JVM and the native image. The JVM grows into that heap under load, so its RSS shows the heap limit more than the live data. The rest is the JVM itself: metaspace, JIT code cache, carrier threads and HTTP client buffers.
+- JVM tuning stops at the container settings in `.env` (GC and heap size). No warmup phase. The first seconds of the Java run include JIT compilation, and the per-second chart shows it. Set `JAVA_OPTS` to try other flags.
 - Rust builds with `--release` and `codegen-units = 1`. Go builds with default flags.
 - `num-bigint` is portable Rust. Java's `BigInteger` gets HotSpot intrinsics for its multiply loops and Go's `math/big` has assembly for amd64 and arm64. At 2048 bits and above, this matters more than the language.

@@ -2,8 +2,8 @@ name: prime-bench
 
 x-app: &app
   user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-  cpus: ${APP_CPUS:-4}
-  mem_limit: ${APP_MEMORY:-2g}
+  cpus: ${APP_CPUS:-2}
+  mem_limit: ${APP_MEMORY_MB:-1536}m
   volumes:
     - ./results:/results
   environment:
@@ -13,7 +13,7 @@ x-app: &app
     ROUNDS: ${ROUNDS:-20}
     RUN_ID: ${RUN_ID:-local}
     DOWNSTREAM_URL: http://mock:8080
-    JAVA_OPTS: ${JAVA_OPTS:-}
+    JAVA_OPTS: -XX:+Use${JVM_GC:-ParallelGC} -XX:MaxRAMPercentage=${HEAP_PERCENT:-75} ${JAVA_OPTS:-}
     GOGC: ${GOGC:-}
     GODEBUG: ${GODEBUG:-}
 
@@ -63,6 +63,7 @@ services:
       args:
         SPRING_JAVA_VERSION: ${SPRING_JAVA_VERSION:-25}
     image: prime-bench/spring-native:java${SPRING_JAVA_VERSION:-25}
+    command: ["-XX:MaximumHeapSizePercent=${HEAP_PERCENT:-75}"]
     ports: ["8085:8080"]
 
   loadgen:
@@ -79,7 +80,7 @@ services:
       - ./results:/results
     environment:
       TARGET: ${TARGET:-http://go:8080}
-      USERS: ${USERS:-2000}
+      USERS: ${USERS:-1000}
       DURATION: ${DURATION:-60s}
       RAMP_UP: ${RAMP_UP:-15s}
       THINK_TIME: ${THINK_TIME:-2s}

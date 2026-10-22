@@ -34,7 +34,7 @@ Tests per module: `apps/java` and `apps/spring` `./mvnw verify` (local JDK: `JAV
 
 - Java style from the java-engineer skill: no comments, no Javadoc, records, constructor injection, Palantir format via Spotless.
 - Commits: one short present-tense paragraph, no AI attribution. prime-bench commits go straight to `main`. Other portfolio repos use a branch and PR; the user merges unless they say otherwise.
-- `.env` holds versions and workload only, no secrets. Images are tagged with their version (`prime-bench/java:27`, `prime-bench/mock:go1.27`).
+- `.env` holds versions, resources and workload, no secrets. Resources are the same for every app and scenario: `APP_CPUS=2`, `APP_MEMORY_MB=1536`, `HEAP_PERCENT=75`, `JVM_GC=ParallelGC` (Microsoft guide for Java in containers). Compose and the k8s render build `JAVA_OPTS` and the native `-XX:MaximumHeapSizePercent` from them; the native image rejects `MaxRAMPercentage`. Images are tagged with their version (`prime-bench/java:27`, `prime-bench/mock:go1.27`).
 - Gateway contract, the same in all four: money in integer minor units (`balanceEurMinor`), a missing downstream field or any downstream failure is a 502 with body `downstream unavailable`, the detail goes to the server log without the account id.
 - CSV schema and percentiles (nearest rank) must stay identical across languages. CI fails if headers differ.
 - Dashboard series colors are validated with the dataviz skill: display order java, spring-native, spring, go, rust. Other orders fail the CVD checks.
@@ -63,7 +63,7 @@ Tests per module: `apps/java` and `apps/spring` `./mvnw verify` (local JDK: `JAV
 
 ## Results to keep in mind
 
-Gateway, 4000 users, same on Compose and Kubernetes: p99 41 ms for all except Spring native (60 ms); CPU Rust 22%, Go 37 to 40%, Java 88%, Spring 124%, Spring native 137%; memory Rust 20 MB, Go 30 MB, JVM 450 to 510 MB. Server (CPU-bound, 512 bits): Go p99 about 400 ms against 10 ms for Java, caused by more CPU per prime in `math/big`, not by GC.
+2 CPUs and 1.5 GB per app. Gateway, 4000 users, same on Compose and Kubernetes: p99 41 to 44 ms for all except Spring native (61 to 63 ms); CPU Rust 17%, Go 31%, Java 77 to 83%, Spring 105 to 110%, Spring native 131 to 135%; memory Rust 19 MB, Go 30 MB, JVM 270 MB to 1.46 GB (follows the 75% heap limit). Server, 1000 users, 512 bits: Go p99 173 to 531 ms against 13 to 16 ms for Java, caused by more CPU per prime in `math/big`, not by GC. Spring fails the gateway at 1 CPU (heap OOM from the backlog) and is near the limit at 1 GB.
 
 ## Open ideas
 
